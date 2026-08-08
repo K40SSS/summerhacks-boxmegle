@@ -1,0 +1,11 @@
+{
+  "name": "boxmegle",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:matchmaker": "pnpm --filter matchmaker dev"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.10"
+  }
+}
