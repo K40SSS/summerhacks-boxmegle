@@ -2,6 +2,7 @@
   "name": "boxmegle",
   "private": true,
   "scripts": {
+    "predev": "lsof -ti tcp:3000,4000 | xargs kill -9 2>/dev/null || true",
     "dev": "concurrently -n web,server -c blue,green \"pnpm dev:web\" \"pnpm dev:server\"",
     "dev:web": "pnpm --filter web dev",
     "dev:server": "pnpm --filter server dev"

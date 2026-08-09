@@ -22,16 +22,19 @@ const NAME_PLACEHOLDERS = [
   "Definitely not a bot",
 ];
 
-const INITIAL_PLACEHOLDER =
-  NAME_PLACEHOLDERS[Math.floor(Math.random() * NAME_PLACEHOLDERS.length)];
-
 export default function Home() {
   const router = useRouter();
   const [matchmakerUp, setMatchmakerUp] = useState<boolean | null>(null);
   const [name, setName] = useState("");
-  const [placeholder] = useState(INITIAL_PLACEHOLDER);
+  const [placeholder, setPlaceholder] = useState(NAME_PLACEHOLDERS[0]);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPlaceholder(
+      NAME_PLACEHOLDERS[Math.floor(Math.random() * NAME_PLACEHOLDERS.length)],
+    );
+  }, []);
 
   useEffect(() => {
     fetch(`${MATCHMAKER_URL}/health`)

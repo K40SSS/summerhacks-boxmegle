@@ -12,6 +12,7 @@ export const publicQueue = pgTable('public_queue', {
   id: serial('id').primaryKey(),
   userUuid: uuid('user_uuid').references(() => users.uuid),
   joinedAt: timestamp('joined_at').defaultNow(),
+  lastSeenAt: timestamp('last_seen_at').defaultNow(),
 });
 
 export const privateRooms = pgTable('private_rooms', {
