@@ -150,6 +150,34 @@ describe("PosePipeline", () => {
     expect(pipeline.blocking).toBe(false);
   });
 
+  it("does not read the guard drop after a block as a punch", () => {
+    // The phantom-punch bug: holding a guard adapts the punch FSM's resting
+    // reach down to the tucked-in blocking pose, so LOWERING the arms — a
+    // fast, reach-increasing motion — read as a punch, at the punch's own
+    // cadence, every time the guard came down.
+    const pipeline = new PosePipeline();
+    const guard = feed(pipeline, GUARD, 30, 1000);
+    const dropped = feed(pipeline, HANDS_DOWN, 20, guard.nextAt);
+
+    expect(dropped.actions.filter((a) => a.type === "PUNCH")).toHaveLength(0);
+    expect(dropped.actions.filter((a) => a.type === "BLOCK_END")).toHaveLength(1);
+  });
+
+  it("emits no punches across repeated block/drop cycles", () => {
+    // The "really fast" form of the same bug: pumping the guard fired both
+    // hands' phantom punches at the cooldown ceiling.
+    const pipeline = new PosePipeline();
+    let at = 1000;
+    const punches: DetectedAction[] = [];
+    for (let cycle = 0; cycle < 4; cycle++) {
+      const up = feed(pipeline, GUARD, 15, at);
+      const down = feed(pipeline, HANDS_DOWN, 15, up.nextAt);
+      at = down.nextAt;
+      punches.push(...[...up.actions, ...down.actions].filter((a) => a.type === "PUNCH"));
+    }
+    expect(punches).toHaveLength(0);
+  });
+
   it("emits a single punch for one extension of the right arm", () => {
     const pipeline = new PosePipeline();
     // Throw from the guard, not from hands-down: extension is measured

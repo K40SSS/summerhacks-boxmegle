@@ -31,6 +31,9 @@ export type MatchStateEvent =
       zone: string | null;
       healthDamage: number;
       guardDamage: number;
+      /** Impact point in the DEFENDER's body frame (shoulder widths, +y down). */
+      impactX: number;
+      impactY: number;
     }
   | { kind: "guard-break"; playerUuid: string }
   | { kind: "block-start" | "block-end"; playerUuid: string };

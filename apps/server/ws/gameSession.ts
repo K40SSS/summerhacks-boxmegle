@@ -35,6 +35,14 @@ type MatchStateEvent =
       zone: string | null;
       healthDamage: number;
       guardDamage: number;
+      /**
+       * Where the punch resolved, in the DEFENDER's body frame (shoulder
+       * widths from the shoulder midpoint, +y down) — the sanitized aim
+       * actually used by the hit test, so clients can flash the impact on
+       * the defender's video.
+       */
+      impactX: number;
+      impactY: number;
     }
   | { kind: 'guard-break'; playerUuid: string }
   | { kind: 'block-start' | 'block-end'; playerUuid: string };
@@ -203,47 +211,57 @@ gameSocketServer.on('connection', (socket, req: IncomingMessage) => {
 
       // Step 4 — broadcast the authoritative snapshot to both sockets, so
       // each client's HUD reflects real match state rather than a guess.
-      // Priority for the single-event summary: a punch is the most
-      // informative thing that can happen on a frame, then a guard break,
-      // then a block edge.
-      let lastEvent: MatchStateEvent | undefined;
-      const punchResolution = resolutions[0];
-      if (punchResolution) {
-        lastEvent = {
-          kind: 'punch',
-          attackerUuid: playerUuid,
-          defenderUuid: punchResolution.defender.playerUuid,
-          punchType: punchResolution.punch.punchType,
-          hand: punchResolution.punch.hand,
-          result: punchResolution.resolved.outcome.result,
-          zone: punchResolution.resolved.outcome.zone,
-          healthDamage: punchResolution.resolved.outcome.healthDamage,
-          guardDamage: punchResolution.resolved.outcome.guardDamage,
-        };
-      } else if (advanced.guardBroke.length > 0) {
-        lastEvent = { kind: 'guard-break', playerUuid: advanced.guardBroke[0].playerUuid };
-      } else {
-        const blockEdge = applied.find((a) => a.type === 'BLOCK_START' || a.type === 'BLOCK_END');
-        if (blockEdge) {
-          lastEvent = {
-            kind: blockEdge.type === 'BLOCK_START' ? 'block-start' : 'block-end',
-            playerUuid,
-          };
+      // Priority for the event summary: punches are the most informative
+      // thing that can happen on a frame, then a guard break, then a block
+      // edge. Both hands CAN land on the same ingested frame (the global
+      // cooldown only gates extension entry), so every punch resolution gets
+      // its own message — clients rely on each punch arriving exactly once
+      // for the impact flashes.
+      const events: MatchStateEvent[] = resolutions.map((resolution) => ({
+        kind: 'punch',
+        attackerUuid: playerUuid,
+        defenderUuid: resolution.defender.playerUuid,
+        punchType: resolution.punch.punchType,
+        hand: resolution.punch.hand,
+        result: resolution.resolved.outcome.result,
+        zone: resolution.resolved.outcome.zone,
+        healthDamage: resolution.resolved.outcome.healthDamage,
+        guardDamage: resolution.resolved.outcome.guardDamage,
+        impactX: resolution.resolved.impact.x,
+        impactY: resolution.resolved.impact.y,
+      }));
+      if (events.length === 0) {
+        if (advanced.guardBroke.length > 0) {
+          events.push({ kind: 'guard-break', playerUuid: advanced.guardBroke[0].playerUuid });
+        } else {
+          const blockEdge = applied.find((a) => a.type === 'BLOCK_START' || a.type === 'BLOCK_END');
+          if (blockEdge) {
+            events.push({
+              kind: blockEdge.type === 'BLOCK_START' ? 'block-start' : 'block-end',
+              playerUuid,
+            });
+          }
         }
       }
 
-      const matchStateMessage: MatchStateMessage = {
-        type: 'match-state',
+      const snapshot = {
+        type: 'match-state' as const,
         now,
         matchStartedAt: session!.match.matchStartedAt,
         phase: session!.match.phase,
         timeLeftMs: session!.match.timeLeftMs(now),
         players: session!.match.players().map(toPlayerStateWire),
-        ...(lastEvent ? { lastEvent } : {}),
       };
-      const matchStatePayload = JSON.stringify(matchStateMessage);
+      const payloads =
+        events.length === 0
+          ? [JSON.stringify(snapshot satisfies MatchStateMessage)]
+          : events.map((lastEvent) =>
+              JSON.stringify({ ...snapshot, lastEvent } satisfies MatchStateMessage),
+            );
       for (const [, peerSocket] of session!.sockets) {
-        if (peerSocket.readyState === peerSocket.OPEN) peerSocket.send(matchStatePayload);
+        if (peerSocket.readyState === peerSocket.OPEN) {
+          for (const payload of payloads) peerSocket.send(payload);
+        }
       }
 
       // Step 5 — end-of-match check. Idempotent, so calling it every frame is

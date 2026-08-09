@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Peer, { type MediaConnection } from "peerjs";
 import { GAME_RULES, type RawLandmark } from "game-mechanics";
 import { FightHud } from "@/components/game/FightHud";
-import { PoseOverlay } from "@/components/game/PoseOverlay";
+import { PoseOverlay, type ImpactFlash } from "@/components/game/PoseOverlay";
 import { usePoseEngine } from "@/vision/use-pose-engine";
 import type {
   MatchEndMessage,
@@ -84,7 +84,7 @@ function buildMatchSummary(
   };
 }
 
-export default function Fight() {
+function Fight() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session");
@@ -105,6 +105,11 @@ export default function Fight() {
   const localLandmarksRef = useRef<RawLandmark[] | null>(null);
   const remoteLandmarksRef = useRef<RawLandmark[] | null>(null);
   const lastPoseSentAtRef = useRef(0);
+  // Punch impacts to flash, split by which pane's body they landed on: your
+  // punches flash on the opponent's video, theirs on yours. Same ref pattern
+  // as the landmarks — PoseOverlay prunes them on its own draw loop.
+  const localImpactsRef = useRef<ImpactFlash[]>([]);
+  const remoteImpactsRef = useRef<ImpactFlash[]>([]);
 
   usePoseEngine({
     videoRef: localVideoRef,
@@ -293,7 +298,23 @@ export default function Fight() {
         return;
       }
       if (typeof data === "object" && data !== null && type === "match-state") {
-        setMatchState(data as MatchStateMessage);
+        const message = data as MatchStateMessage;
+        const event = message.lastEvent;
+        // Flash resolved punches where they landed, on the pane showing the
+        // body they landed on. Each punch arrives on exactly one message.
+        if (event?.kind === "punch") {
+          const pane = event.defenderUuid === uuid ? localImpactsRef : remoteImpactsRef;
+          pane.current.push({
+            x: event.impactX,
+            y: event.impactY,
+            result: event.result,
+            at: performance.now(),
+          });
+          // Backstop against a pane whose draw loop isn't pruning (hidden
+          // tab): keep only the newest few.
+          if (pane.current.length > 8) pane.current.splice(0, pane.current.length - 8);
+        }
+        setMatchState(message);
         return;
       }
       if (typeof data === "object" && data !== null && type === "match-end") {
@@ -333,7 +354,11 @@ export default function Fight() {
           muted
           className="h-full w-full object-cover"
         />
-        <PoseOverlay videoRef={localVideoRef} landmarksRef={localLandmarksRef} />
+        <PoseOverlay
+          videoRef={localVideoRef}
+          landmarksRef={localLandmarksRef}
+          impactsRef={localImpactsRef}
+        />
         <span className="absolute bottom-4 left-4 text-xs font-medium text-white/70">
           You
         </span>
@@ -345,7 +370,11 @@ export default function Fight() {
           playsInline
           className="h-full w-full object-cover"
         />
-        <PoseOverlay videoRef={remoteVideoRef} landmarksRef={remoteLandmarksRef} />
+        <PoseOverlay
+          videoRef={remoteVideoRef}
+          landmarksRef={remoteLandmarksRef}
+          impactsRef={remoteImpactsRef}
+        />
         <span className="absolute bottom-4 right-4 text-xs font-medium text-white/70">
           Opponent
         </span>
@@ -376,5 +405,17 @@ export default function Fight() {
         Leave game
       </button>
     </div>
+  );
+}
+
+/**
+ * useSearchParams() must sit under a Suspense boundary or `next build`
+ * fails prerendering the route (missing-suspense-with-csr-bailout).
+ */
+export default function FightPage() {
+  return (
+    <Suspense>
+      <Fight />
+    </Suspense>
   );
 }

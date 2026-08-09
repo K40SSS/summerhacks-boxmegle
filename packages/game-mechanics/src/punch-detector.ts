@@ -42,6 +42,20 @@ export interface PunchDetectorOptions {
   perHandCooldownMs: number;
   maxExtensionMs: number;
   minConfidence: number;
+  /**
+   * Arm-lowering veto: an "extension" whose mean wrist travel is downward
+   * faster than this (sw/s) with almost no forward drive is a guard being
+   * DROPPED, not a punch. Lowering the arms is reach-increasing and fast —
+   * the same signature the FSM triggers on — and without the veto every
+   * block release fired a phantom punch (both hands, at the cooldown
+   * ceiling). The veto also requires the downward rate to dominate lateral
+   * travel, because no real punch is vertical-dominant downward: jabs and
+   * crosses drive toward the camera, hooks sweep sideways (even when arcing
+   * down at the body), uppercuts rise.
+   */
+  dropVetoMinDownward: number;
+  /** Forward drive below this fraction of the downward rate confirms a drop. */
+  dropVetoForwardRatio: number;
 }
 
 export const DEFAULT_PUNCH_OPTIONS: PunchDetectorOptions = {
@@ -50,6 +64,8 @@ export const DEFAULT_PUNCH_OPTIONS: PunchDetectorOptions = {
   perHandCooldownMs: GAME_RULES.perHandCooldownMs,
   maxExtensionMs: 900,
   minConfidence: GAME_RULES.minPunchConfidence,
+  dropVetoMinDownward: 0.8,
+  dropVetoForwardRatio: 0.25,
 };
 
 function initialHandState(): HandState {
@@ -122,12 +138,16 @@ export class PunchDetector {
           s.phase = "EXTENDING";
           s.extensionStart = now;
           s.peakReach = reach;
-          s.sumVelX = 0;
-          s.sumVelY = 0;
-          s.sumVelZ = 0;
+          // Seed the trajectory with the trigger frame — it's the frame that
+          // passed minStartSpeed, and it guarantees samples >= 1 at PEAK so
+          // the mean-velocity reads (classification, arm-lowering veto) can
+          // never divide an empty accumulator into all-zero means.
+          s.sumVelX = vel.x;
+          s.sumVelY = vel.y;
+          s.sumVelZ = vel.z;
           s.maxSpeed = speed;
           s.minElbowAngle = elbowAngle;
-          s.samples = 0;
+          s.samples = 1;
           s.startY = wristY;
           s.startTorsoRotation = f.torsoRotation;
           s.maxTorsoDelta = 0;
@@ -136,25 +156,48 @@ export class PunchDetector {
       }
 
       case "EXTENDING": {
-        s.samples += 1;
-        s.sumVelX += vel.x;
-        s.sumVelY += vel.y;
-        s.sumVelZ += vel.z;
-        s.maxSpeed = Math.max(s.maxSpeed, speed);
-        s.minElbowAngle = Math.min(s.minElbowAngle, elbowAngle);
-        s.maxTorsoDelta = Math.max(
-          s.maxTorsoDelta,
-          Math.abs(f.torsoRotation - s.startTorsoRotation),
-        );
-
         if (reach > s.peakReach) {
+          // Still extending — this frame is part of the punch trajectory.
           s.peakReach = reach;
+          s.samples += 1;
+          s.sumVelX += vel.x;
+          s.sumVelY += vel.y;
+          s.sumVelZ += vel.z;
+          s.maxSpeed = Math.max(s.maxSpeed, speed);
+          s.minElbowAngle = Math.min(s.minElbowAngle, elbowAngle);
+          s.maxTorsoDelta = Math.max(
+            s.maxTorsoDelta,
+            Math.abs(f.torsoRotation - s.startTorsoRotation),
+          );
           return null;
         }
+        // Reach stopped increasing → this frame is the REVERSAL, the first
+        // frame of whatever comes next. Keep it out of the accumulators: its
+        // velocity points against the extension and would smear every mean
+        // the classifier (and the arm-lowering veto) reads.
 
-        // Reach stopped increasing → PEAK.
         const extension = s.peakReach - s.guardReach;
         if (extension >= this.options.minExtension) {
+          // Arm-lowering veto (see the option docs): downward-dominant travel
+          // with no forward drive is a guard coming down, not a punch. Put
+          // the hand through RETRACTING/COOLDOWN as usual — the motion is
+          // real, it's just not an attack — but leave the global punch clock
+          // alone so it cannot delay the other hand's genuine punch.
+          const n = Math.max(1, s.samples);
+          const meanVy = s.sumVelY / n;
+          const forwardDrive = Math.max(0, -s.sumVelZ / n);
+          // Downward must dominate LATERAL travel too: a body hook arcs down
+          // while sweeping sideways, and only the drop is vertical-dominant.
+          if (
+            meanVy > this.options.dropVetoMinDownward &&
+            meanVy > Math.abs(s.sumVelX / n) &&
+            forwardDrive < this.options.dropVetoForwardRatio * meanVy
+          ) {
+            s.phase = "RETRACTING";
+            s.cooldownUntil = now + this.options.perHandCooldownMs;
+            return null;
+          }
+
           s.phase = "RETRACTING";
           s.cooldownUntil = now + this.options.perHandCooldownMs;
           this.lastAnyPunchAt = now;

@@ -138,12 +138,11 @@ describe("PunchDetector (TDD §12.4–§12.6)", () => {
       );
       t += 40;
     }
-    // Classification fires on the first retraction frame, which the detector
-    // still folds into the accumulators — keep the elbow angle there too.
+    // Emission fires on the first retraction frame, but that reversal frame
+    // is EXCLUDED from the accumulators — classification reads only the
+    // extension frames above, so the retraction can use fixture defaults.
     for (const reach of [1.35, 1.1, 0.92, 0.8]) {
-      frames.push(
-        frame(t, { rightReach: reach, rightWristSpeed: 1.8, rightElbowAngle: elbowAngle }),
-      );
+      frames.push(frame(t, { rightReach: reach, rightWristSpeed: 1.8 }));
       t += 40;
     }
     return runPunches(frames);
@@ -167,6 +166,37 @@ describe("PunchDetector (TDD §12.4–§12.6)", () => {
     const punches = punchWithVelocity({ x: 3.0, y: -0.4, z: -0.6 }, 175);
     expect(punches).toHaveLength(1);
     expect(punches[0]).toMatchObject({ punchType: "JAB" });
+  });
+
+  it("keeps a downward-arcing body hook — lateral dominates the drop veto", () => {
+    // Chin-to-body hook: sweeps sideways while falling. The arm-lowering
+    // veto must not swallow it — only vertical-DOMINANT travel is a drop.
+    const punches = punchWithVelocity({ x: 3.0, y: 1.6, z: -0.35 }, 110);
+    expect(punches).toHaveLength(1);
+    expect(punches[0]).toMatchObject({ punchType: "HOOK" });
+  });
+
+  it("vetoes a violent single-frame guard drop (no extra extension frames)", () => {
+    // A drop fast enough to clear minExtension on its trigger frame reaches
+    // PEAK with only that frame's trajectory. The trigger frame is seeded
+    // into the accumulators, so the veto still sees the downward motion —
+    // an empty accumulator would read as all-zero means and emit a phantom.
+    const frames: FrameFeatures[] = [];
+    let t = 1000;
+    for (let i = 0; i < 10; i++, t += 40) frames.push(frame(t));
+    frames.push(
+      frame(t, {
+        rightReach: 1.25,
+        rightWristSpeed: 5,
+        rightWristVelocity: { x: 0.2, y: 5, z: 0.3 },
+      }),
+    );
+    t += 40;
+    frames.push(frame(t, { rightReach: 1.2, rightWristSpeed: 0.8 }));
+    t += 40;
+    for (let i = 0; i < 10; i++, t += 40) frames.push(frame(t));
+
+    expect(runPunches(frames)).toHaveLength(0);
   });
 });
 
