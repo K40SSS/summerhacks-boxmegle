@@ -17,7 +17,12 @@ const MATCHMAKER_URL =
 const POLL_INTERVAL_MS = 1500;
 
 type QueueStatus =
-  | { matched: true; sessionId: string; isHost: boolean }
+  | {
+      matched: true;
+      sessionId: string;
+      isHost: boolean;
+      opponentUuid: string | null;
+    }
   | { matched: false; playersInQueue: number; queuePosition: number | null };
 
 function AnimatedEllipsis() {
@@ -55,6 +60,7 @@ function QueueContent() {
 
     let cancelled = false;
     const poll = async () => {
+      const startedAt = Date.now();
       try {
         const res = await fetch(
           `${MATCHMAKER_URL}/queue/status?userUuid=${encodeURIComponent(userUuid)}`,
@@ -62,15 +68,22 @@ function QueueContent() {
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data = (await res.json()) as QueueStatus;
         if (cancelled) return;
+        console.log(`[queue:${userUuid}] poll at ${new Date(startedAt).toISOString()} ->`, data);
         if (data.matched) {
-          router.push(
-            `/begin_fight?session=${encodeURIComponent(data.sessionId)}&host=${data.isHost}`,
-          );
+          const params = new URLSearchParams({
+            session: data.sessionId,
+            host: String(data.isHost),
+            uuid: userUuid,
+          });
+          if (data.opponentUuid) params.set("opponent", data.opponentUuid);
+          console.log(`[queue:${userUuid}] matched, navigating to /begin_fight?${params.toString()}`);
+          router.push(`/begin_fight?${params.toString()}`);
           return;
         }
         setStatus(data);
         setPollFailed(false);
-      } catch {
+      } catch (err) {
+        console.error(`[queue:${userUuid}] poll failed at ${new Date(startedAt).toISOString()}`, err);
         if (!cancelled) setPollFailed(true);
       }
     };

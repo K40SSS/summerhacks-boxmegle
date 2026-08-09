@@ -169,6 +169,7 @@ export function LandingBackground() {
         entry.sprite.material.dispose();
       }
       renderer.dispose();
+      renderer.forceContextLoss();
       container.removeChild(renderer.domElement);
     };
   }, []);

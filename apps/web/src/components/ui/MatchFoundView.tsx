@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Press_Start_2P } from "next/font/google";
 import { FighterModel } from "@/components/fighter/FighterModel";
@@ -72,11 +72,14 @@ function CountdownRing({ seconds }: { seconds: number }) {
 export interface MatchFoundViewProps {
   session: string | null;
   isHost: boolean;
+  onCountdownComplete?: () => void;
 }
 
-export function MatchFoundView({ session, isHost }: MatchFoundViewProps) {
+export function MatchFoundView({ session, isHost, onCountdownComplete }: MatchFoundViewProps) {
   const [count, setCount] = useState(COUNTDOWN_FROM);
   const [tagline, setTagline] = useState(TAGLINES[0]);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const [cameraStatus, setCameraStatus] = useState("connecting");
 
   useEffect(() => {
     setTagline(TAGLINES[Math.floor(Math.random() * TAGLINES.length)]);
@@ -87,6 +90,36 @@ export function MatchFoundView({ session, isHost }: MatchFoundViewProps) {
     const id = setTimeout(() => setCount((c) => c - 1), 1000);
     return () => clearTimeout(id);
   }, [count]);
+
+  useEffect(() => {
+    if (count === 0) onCountdownComplete?.();
+  }, [count, onCountdownComplete]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let stream: MediaStream | null = null;
+
+    navigator.mediaDevices
+      .getUserMedia({ video: true, audio: true })
+      .then((s) => {
+        if (cancelled) {
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        stream = s;
+        if (localVideoRef.current) localVideoRef.current.srcObject = s;
+        setCameraStatus("ready");
+      })
+      .catch((err) => {
+        console.error("failed to access camera", err);
+        if (!cancelled) setCameraStatus("error");
+      });
+
+    return () => {
+      cancelled = true;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
 
   const ringing = count > 0;
 
@@ -138,6 +171,19 @@ export function MatchFoundView({ session, isHost }: MatchFoundViewProps) {
           <p className="font-mono text-[11px] uppercase tracking-widest text-zinc-500">
             {tagline}
           </p>
+        </div>
+
+        <div className="relative aspect-video w-full max-w-sm overflow-hidden rounded-sm bg-zinc-900">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="h-full w-full object-cover"
+          />
+          <span className="absolute bottom-2 left-2 text-xs font-medium text-white/70">
+            You · camera {cameraStatus}
+          </span>
         </div>
 
         <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
