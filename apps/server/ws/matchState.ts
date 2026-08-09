@@ -25,7 +25,9 @@ import {
   advanceMatch,
   advanceTo,
   applyPunch,
+  decideWinner,
   endBlock,
+  GAME_RULES,
   initialPlayerState,
   startBlock,
   type DetectedAction,
@@ -42,6 +44,21 @@ export interface MatchPlayer {
   readonly ingest: PlayerIngest;
 }
 
+export type MatchPhase = 'WAITING' | 'FIRST_HALF' | 'HALFTIME' | 'SECOND_HALF' | 'ENDED';
+
+export interface MatchEndResult {
+  reason: 'KO' | 'DECISION' | 'DRAW';
+  winnerUuid: string | null;
+  durationMs: number;
+  players: MatchPlayer[];
+}
+
+// Cumulative elapsed-time thresholds (ms since matchStartedAt) at which the
+// match transitions phase.
+const HALFTIME_AT_MS = GAME_RULES.firstHalfDurationMs;
+const SECOND_HALF_AT_MS = GAME_RULES.firstHalfDurationMs + GAME_RULES.halftimeDurationMs;
+const MATCH_END_AT_MS = SECOND_HALF_AT_MS + GAME_RULES.secondHalfDurationMs;
+
 export interface MatchAdvanceLog {
   /** Fighters whose guard drained to zero during this advance. */
   guardBroke: MatchPlayer[];
@@ -50,7 +67,17 @@ export interface MatchAdvanceLog {
 }
 
 export class MatchState {
-  private readonly players = new Map<string, MatchPlayer>();
+  private readonly playersByUuid = new Map<string, MatchPlayer>();
+  private matchStartedAtValue: number | null = null;
+  private phaseValue: MatchPhase = 'WAITING';
+
+  get matchStartedAt(): number | null {
+    return this.matchStartedAtValue;
+  }
+
+  get phase(): MatchPhase {
+    return this.phaseValue;
+  }
 
   /**
    * Idempotent — a reconnect inside the grace window finds its existing
@@ -58,32 +85,124 @@ export class MatchState {
    * null if a third uuid turns up for a two-player session.
    */
   join(playerUuid: string, now: number): MatchPlayer | null {
-    const existing = this.players.get(playerUuid);
+    const existing = this.playersByUuid.get(playerUuid);
     if (existing) return existing;
-    if (this.players.size >= 2) return null;
+    if (this.playersByUuid.size >= 2) return null;
 
     const player: MatchPlayer = {
       playerUuid,
-      state: initialPlayerState(playerUuid, this.players.size as Slot, now),
+      state: initialPlayerState(playerUuid, this.playersByUuid.size as Slot, now),
       ingest: new PlayerIngest(playerUuid),
     };
-    this.players.set(playerUuid, player);
+    this.playersByUuid.set(playerUuid, player);
+
+    if (this.playersByUuid.size === 2) {
+      this.matchStartedAtValue = now;
+      this.phaseValue = 'FIRST_HALF';
+    }
+
     return player;
   }
 
+  /**
+   * Refresh `phase` against the clock. FIRST_HALF -> HALFTIME -> SECOND_HALF
+   * on the cumulative thresholds; ENDED is only ever set by `checkMatchEnd`,
+   * never rolled back here.
+   */
+  private updatePhase(now: number): void {
+    if (this.matchStartedAtValue === null || this.phaseValue === 'ENDED') return;
+    const elapsed = now - this.matchStartedAtValue;
+    if (elapsed >= SECOND_HALF_AT_MS) {
+      this.phaseValue = 'SECOND_HALF';
+    } else if (elapsed >= HALFTIME_AT_MS) {
+      this.phaseValue = 'HALFTIME';
+    } else {
+      this.phaseValue = 'FIRST_HALF';
+    }
+  }
+
+  /** Milliseconds left in the current phase's clock segment. 0 before start or after end. */
+  timeLeftMs(now: number): number {
+    if (this.matchStartedAtValue === null || this.phaseValue === 'ENDED') return 0;
+    this.updatePhase(now);
+    const elapsed = now - this.matchStartedAtValue;
+    switch (this.phaseValue) {
+      case 'FIRST_HALF':
+        return Math.max(0, HALFTIME_AT_MS - elapsed);
+      case 'HALFTIME':
+        return Math.max(0, SECOND_HALF_AT_MS - elapsed);
+      case 'SECOND_HALF':
+        return Math.max(0, MATCH_END_AT_MS - elapsed);
+      default:
+        return 0;
+    }
+  }
+
+  /**
+   * End-of-match check. Idempotent — returns null immediately once ENDED, so
+   * this can be called every frame without double-firing a result.
+   */
+  checkMatchEnd(now: number): MatchEndResult | null {
+    if (this.phaseValue === 'ENDED') return null;
+    if (this.matchStartedAtValue === null) return null;
+
+    this.updatePhase(now);
+
+    const players = this.players();
+    if (players.length < 2) return null;
+    const [a, b] = players;
+    const durationMs = now - this.matchStartedAtValue;
+
+    const aDown = a.state.health <= 0;
+    const bDown = b.state.health <= 0;
+
+    if (aDown || bDown) {
+      this.phaseValue = 'ENDED';
+      if (aDown && bDown) {
+        const verdict = decideWinner(a.state, b.state);
+        return {
+          reason: verdict === 'DRAW' ? 'DRAW' : 'KO',
+          winnerUuid: verdict === 'DRAW' ? null : verdict === 'A' ? a.playerUuid : b.playerUuid,
+          durationMs,
+          players,
+        };
+      }
+      const winner = aDown ? b : a;
+      return { reason: 'KO', winnerUuid: winner.playerUuid, durationMs, players };
+    }
+
+    if (durationMs >= MATCH_END_AT_MS) {
+      this.phaseValue = 'ENDED';
+      const verdict = decideWinner(a.state, b.state);
+      return {
+        reason: verdict === 'DRAW' ? 'DRAW' : 'DECISION',
+        winnerUuid: verdict === 'DRAW' ? null : verdict === 'A' ? a.playerUuid : b.playerUuid,
+        durationMs,
+        players,
+      };
+    }
+
+    return null;
+  }
+
   get(playerUuid: string): MatchPlayer | undefined {
-    return this.players.get(playerUuid);
+    return this.playersByUuid.get(playerUuid);
+  }
+
+  /** Both fighters, in join order (index 0 = slot 0, index 1 = slot 1). */
+  players(): MatchPlayer[] {
+    return [...this.playersByUuid.values()];
   }
 
   opponentOf(playerUuid: string): MatchPlayer | undefined {
-    for (const [uuid, player] of this.players) {
+    for (const [uuid, player] of this.playersByUuid) {
       if (uuid !== playerUuid) return player;
     }
     return undefined;
   }
 
   get size(): number {
-    return this.players.size;
+    return this.playersByUuid.size;
   }
 
   /**
@@ -92,7 +211,7 @@ export class MatchState {
    */
   advance(now: number): MatchAdvanceLog {
     const log: MatchAdvanceLog = { guardBroke: [], stunEnded: [] };
-    const [a, b] = [...this.players.values()];
+    const [a, b] = [...this.playersByUuid.values()];
 
     if (a && b) {
       const out = advanceMatch(a.state, b.state, now);
