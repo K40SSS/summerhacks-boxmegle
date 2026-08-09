@@ -147,7 +147,10 @@ export function recordMatchState(stats: MatchStats, msg: MatchStateMessage): voi
       attackerUuid: event.attackerUuid,
       type: punchType,
       damage: event.healthDamage,
-      atMs: Math.max(0, msg.now - msg.matchStartedAt),
+      // event.atMs is sinceBell (frame.timestamp - bell) — the same tape-clock
+      // the replay scrubber uses. msg.now - msg.matchStartedAt diverges because
+      // msg.now is performance.now() on the frame AFTER punch detection.
+      atMs: event.atMs,
     };
   }
 }

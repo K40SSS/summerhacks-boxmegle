@@ -31,6 +31,8 @@ export type MatchStateEvent =
       zone: string | null;
       healthDamage: number;
       guardDamage: number;
+      /** Milliseconds since the opening bell — same clock as tape.header.events[].atMs. */
+      atMs: number;
     }
   | { kind: "guard-break"; playerUuid: string }
   | { kind: "block-start" | "block-end"; playerUuid: string };

@@ -70,6 +70,22 @@ function interpolate(tape: FightTape, side: Side, atMs: number): number {
   return ys[ys.length - 1];
 }
 
+/**
+ * When a real tape is loaded, derive health from recorded punch events rather
+ * than the mock analytics tape. `events` are sorted ascending by atMs
+ * (guaranteed by replayEventsFrom), so we break as soon as we overshoot.
+ * `side` is the fighter whose health we want — so we accumulate damage dealt
+ * BY the opponent (e.by !== side).
+ */
+function healthFromEvents(events: ReplayEvent[], side: Side, atMs: number): number {
+  let damageTaken = 0;
+  for (const e of events) {
+    if (e.atMs > atMs) break;
+    if (e.by !== side && e.damage > 0) damageTaken += e.damage;
+  }
+  return Math.max(0, Math.round(100 - damageTaken));
+}
+
 export function MatchReplay({
   tape,
   events,
@@ -145,10 +161,18 @@ export function MatchReplay({
     if (feed) feed.scrollTop = feed.scrollHeight;
   }, [elapsed.length]);
 
-  const health = {
-    you: Math.max(0, Math.round(interpolate(tape, "you", atMs))),
-    opponent: Math.max(0, Math.round(interpolate(tape, "opponent", atMs))),
-  };
+  // Use real event damage when a tape is loaded; fall back to the mock
+  // analytics tape otherwise. The two sources use the same atMs clock, so
+  // the health bars stay in sync with the event feed either way.
+  const health = sides
+    ? {
+        you: healthFromEvents(events, "you", atMs),
+        opponent: healthFromEvents(events, "opponent", atMs),
+      }
+    : {
+        you: Math.max(0, Math.round(interpolate(tape, "you", atMs))),
+        opponent: Math.max(0, Math.round(interpolate(tape, "opponent", atMs))),
+      };
 
   const toggle = useCallback(() => {
     setAtMs((current) => (current >= durationMs ? 0 : current));

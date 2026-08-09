@@ -229,8 +229,6 @@ function SummaryContent() {
 
   const winner =
     match.winner === null ? null : match.winner === "you" ? match.you : match.opponent;
-  const strongestBy =
-    match.strongestPunch.by === "you" ? match.you.name : match.opponent.name;
 
   // Nothing records the per-window charts yet, so the deep dive still falls
   // back to the fixture. The `analyticsAreSample` flag is what the page shows
@@ -251,6 +249,31 @@ function SummaryContent() {
   // A tape knows its own length; the stored summary's duration is the fallback.
   const replayLengthMs = tape ? replayDurationMs(tape) : match.durationMs;
 
+  // When a real tape is loaded, derive the strongest punch from the recorded
+  // event log so the seek button lands at the exact moment in the replay
+  // timeline. The stored/demo summary uses a different clock origin and cannot
+  // be trusted for seeking into a tape that was not recorded alongside it.
+  const tapeStrongest = useMemo(() => {
+    if (!tape || !sides) return null;
+    let best: (typeof replayEvents)[0] | null = null;
+    for (const e of replayEvents) {
+      // Ties go to the later punch — a fight-ending blow of equal weight wins.
+      if (e.damage > 0 && (!best || e.damage >= best.damage)) best = e;
+    }
+    if (!best) return null;
+    return {
+      type: best.punchType,
+      damage: best.damage,
+      atMs: best.atMs,
+      speed: best.speed,
+      by: best.by,
+    };
+  }, [tape, sides, replayEvents]);
+
+  const effectiveStrongest = tapeStrongest ?? match.strongestPunch;
+  const strongestBy =
+    effectiveStrongest.by === "you" ? match.you.name : match.opponent.name;
+
   // The strongest-punch card seeks the shared replay instead of owning a
   // second player. Bumped through a counter so re-clicking the same punch
   // still re-seeks.
@@ -267,12 +290,49 @@ function SummaryContent() {
     { name: names.opponent, color: seriesColors.opponent },
   ];
 
-  const damageByType = {
-    you: PUNCH_ORDER.map((p) => match.you.punches[p].landed * PUNCH_STATS[p].healthDamage),
-    opponent: PUNCH_ORDER.map(
+  // When a real tape is available use zone-scaled damage straight from the
+  // recorded events — each event's `damage` already has the 1.5× HEAD
+  // multiplier applied by resolvePunch on the server. Without a tape fall back
+  // to base PUNCH_STATS damage (no zone breakdown is stored in the summary
+  // payload, so there is nothing better to use).
+  const damageByType = useMemo(() => {
+    if (tape && sides) {
+      return {
+        you: PUNCH_ORDER.map((p) =>
+          replayEvents
+            .filter((e) => e.by === "you" && e.punchType === p)
+            .reduce((s, e) => s + e.damage, 0),
+        ),
+        opponent: PUNCH_ORDER.map((p) =>
+          replayEvents
+            .filter((e) => e.by === "opponent" && e.punchType === p)
+            .reduce((s, e) => s + e.damage, 0),
+        ),
+      };
+    }
+    // Without a tape there is no per-punch zone breakdown, so base damage
+    // is the best approximation available.  Scale it so the chart total
+    // matches `damageDealt` (which already has zone multipliers baked in)
+    // — the chart and the stat column always agree on the total even if the
+    // per-type split is approximate.
+    const scaleToActual = (
+      fighter: FighterSummary,
+      values: number[],
+    ): number[] => {
+      const baseSum = values.reduce((a, b) => a + b, 0);
+      if (baseSum === 0) return values;
+      const scale = fighter.damageDealt / baseSum;
+      return values.map((v) => Math.round(v * scale * 10) / 10);
+    };
+    const youBase = PUNCH_ORDER.map((p) => match.you.punches[p].landed * PUNCH_STATS[p].healthDamage);
+    const oppBase = PUNCH_ORDER.map(
       (p) => match.opponent.punches[p].landed * PUNCH_STATS[p].healthDamage,
-    ),
-  };
+    );
+    return {
+      you: scaleToActual(match.you, youBase),
+      opponent: scaleToActual(match.opponent, oppBase),
+    };
+  }, [tape, sides, replayEvents, match]);
   const punchesByType = {
     you: PUNCH_ORDER.map((p) => match.you.punches[p].thrown),
     opponent: PUNCH_ORDER.map((p) => match.opponent.punches[p].thrown),
@@ -387,20 +447,20 @@ function SummaryContent() {
           <Panel title="strongest punch" aside={strongestBy}>
             <div className="flex flex-col gap-1">
               <span className="text-4xl font-bold leading-none text-black">
-                {match.strongestPunch.damage}
+                {effectiveStrongest.damage}
                 <span className="ml-1 text-lg font-medium text-zinc-600">dmg</span>
               </span>
               <span className="font-mono text-xs text-zinc-700">
-                {PUNCH_STATS[match.strongestPunch.type].label} @{" "}
-                {formatClock(match.strongestPunch.atMs)} ·{" "}
-                {match.strongestPunch.speed.toFixed(1)} sw/s
+                {PUNCH_STATS[effectiveStrongest.type].label} @{" "}
+                {formatClock(effectiveStrongest.atMs)} ·{" "}
+                {effectiveStrongest.speed.toFixed(1)} sw/s
               </span>
             </div>
             <button
               type="button"
               onClick={() =>
                 setSeek((s) => ({
-                  atMs: match.strongestPunch.atMs,
+                  atMs: effectiveStrongest.atMs,
                   nonce: (s?.nonce ?? 0) + 1,
                 }))
               }

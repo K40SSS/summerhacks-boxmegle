@@ -37,6 +37,8 @@ type MatchStateEvent =
       zone: string | null;
       healthDamage: number;
       guardDamage: number;
+      /** Milliseconds since the opening bell — same clock as tape.header.events[].atMs. */
+      atMs: number;
     }
   | { kind: 'guard-break'; playerUuid: string }
   | { kind: 'block-start' | 'block-end'; playerUuid: string };
@@ -260,6 +262,10 @@ gameSocketServer.on('connection', (socket, req: IncomingMessage) => {
           zone: punchResolution.resolved.outcome.zone,
           healthDamage: punchResolution.resolved.outcome.healthDamage,
           guardDamage: punchResolution.resolved.outcome.guardDamage,
+          // Same clock as tape.header.events — sinceBell is frame.timestamp - bell,
+          // which is what the replay scrubber is driven from. Using msg.now here
+          // would diverge because now is snapped to the frame AFTER detection.
+          atMs: Math.max(0, sinceBell),
         };
       } else if (advanced.guardBroke.length > 0) {
         lastEvent = { kind: 'guard-break', playerUuid: advanced.guardBroke[0].playerUuid };
