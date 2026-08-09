@@ -111,8 +111,11 @@ export interface FrameFeatures {
 }
 
 /**
- * Semantic combat actions emitted by the detectors. These are what a client
- * sends to an authoritative server — never damage numbers.
+ * Semantic combat actions emitted by the detectors — never damage numbers.
+ * The detectors are pure and run wherever the pose stream is consumed.
+ *
+ * Note there is no dodge action: evasion is not a claim anyone emits, it is
+ * geometry the punch resolver computes from the defender's pose. See hitbox.ts.
  */
 export type DetectedAction =
   | {
@@ -130,12 +133,4 @@ export type DetectedAction =
       timestamp: number;
     }
   | { type: "BLOCK_START"; timestamp: number }
-  | { type: "BLOCK_END"; timestamp: number }
-  | {
-      type: "DODGE_START";
-      /** Whole-body offset from the neutral anchor, body frame, sw. */
-      offsetX: number;
-      offsetY: number;
-      timestamp: number;
-    }
-  | { type: "DODGE_END"; timestamp: number };
+  | { type: "BLOCK_END"; timestamp: number };

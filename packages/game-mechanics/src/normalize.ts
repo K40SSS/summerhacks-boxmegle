@@ -8,7 +8,7 @@
  * negative y). Because the raw feed is unmirrored, this frame is a
  * REFLECTION of image space, not a rotation — a pure rotation that lands
  * the shoulders on ±x would flip y upward and every absolute-sign consumer
- * (uppercut start height, punch impact height, dodge duck direction) would
+ * (uppercut start height, punch impact height, hitbox zone heights) would
  * invert.
  */
 
