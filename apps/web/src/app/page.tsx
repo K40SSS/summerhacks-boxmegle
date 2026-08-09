@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Press_Start_2P } from "next/font/google";
 import { ServerStatusCard } from "@/components/ui/ServerStatusCard";
 import { LandingBackground } from "@/components/landing/LandingBackground";
@@ -22,9 +23,11 @@ const NAME_PLACEHOLDERS = [
 ];
 
 export default function Home() {
+  const router = useRouter();
   const [matchmakerUp, setMatchmakerUp] = useState<boolean | null>(null);
   const [name, setName] = useState("");
   const [placeholder, setPlaceholder] = useState(NAME_PLACEHOLDERS[0]);
+  const [entering, setEntering] = useState(false);
 
   useEffect(() => {
     setPlaceholder(
@@ -38,9 +41,37 @@ export default function Home() {
       .catch(() => setMatchmakerUp(false));
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: hand off to matchmaking flow
+    if (!name.trim() || entering) return;
+
+    setEntering(true);
+    try {
+      // TODO: replace with real matchmaking (/queue); stubbing a second
+      // player here just to exercise /begin_fight end-to-end.
+      const player1 = { uuid: crypto.randomUUID(), name: name.trim() };
+      const player2 = { uuid: crypto.randomUUID(), name: "Test Opponent" };
+
+      const res = await fetch(`${MATCHMAKER_URL}/begin_fight`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ player1, player2 }),
+      });
+
+      if (!res.ok) throw new Error(`begin_fight failed: ${res.status}`);
+      const session = await res.json();
+
+      const params = new URLSearchParams({
+        session: session.sessionId,
+        uuid: player1.uuid,
+        opponent: player2.uuid,
+        host: String(session.hostUuid === player1.uuid),
+      });
+      router.push(`/fight?${params.toString()}`);
+    } catch (err) {
+      console.error(err);
+      setEntering(false);
+    }
   };
 
   return (
@@ -70,9 +101,10 @@ export default function Home() {
           />
           <button
             type="submit"
-            className="flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-base font-medium text-white shadow-sm transition-colors hover:bg-zinc-800"
+            disabled={entering}
+            className="flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-base font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:opacity-50"
           >
-            Enter!
+            {entering ? "Entering..." : "Enter!"}
           </button>
         </form>
         <p className="text-xs text-zinc-400">
