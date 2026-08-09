@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Peer, { type MediaConnection } from "peerjs";
 import { GAME_RULES, type RawLandmark } from "game-mechanics";
@@ -85,6 +85,14 @@ function buildMatchSummary(
 }
 
 export default function Fight() {
+  return (
+    <Suspense>
+      <FightPage />
+    </Suspense>
+  );
+}
+
+function FightPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session");
