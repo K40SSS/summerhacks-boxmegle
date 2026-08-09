@@ -1,18 +1,11 @@
-import { allowedOrigins } from "./env";
+import "./env";
 import http from "http";
 import express from "express";
 import { gameRouter } from "./routes/game";
+import { profileRouter } from "./routes/profile";
 import { queueRouter, startMatchmakerWorker } from "./routes/queue";
-import { turnRouter } from "./routes/turn";
 import { createPeerServer } from "./peer";
 import { gameSocketServer } from "./ws/gameSession";
-
-process.on("uncaughtException", (err) => {
-  console.error("uncaughtException", err);
-});
-process.on("unhandledRejection", (err) => {
-  console.error("unhandledRejection", err);
-});
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
@@ -22,10 +15,7 @@ const { peerServer, peerSocketServer } = createPeerServer(httpServer);
 app.use(express.json());
 
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin && allowedOrigins.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") {
@@ -42,7 +32,7 @@ app.get("/health", (_req, res) => {
 app.use("/peerjs", peerServer);
 app.use(gameRouter);
 app.use(queueRouter);
-app.use(turnRouter);
+app.use(profileRouter);
 
 // Both peer signaling and game-state websockets share this single
 // httpServer/port; we dispatch the one 'upgrade' event by path ourselves.
@@ -66,7 +56,7 @@ httpServer.on("upgrade", (req, socket, head) => {
   socket.destroy();
 });
 
-httpServer.listen(port, "0.0.0.0", () => {
+httpServer.listen(port, () => {
   console.log(`server listening on port ${port}`);
   startMatchmakerWorker();
 });

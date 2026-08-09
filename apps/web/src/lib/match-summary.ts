@@ -1,4 +1,5 @@
 import type { PunchType } from "game-mechanics";
+import type { MatchAnalytics } from "./summary-analytics";
 
 /**
  * The payload the summary page renders. The fight page will write one of
@@ -51,6 +52,13 @@ export interface MatchSummary {
   opponent: FighterSummary;
   /** One-paragraph story of the fight, written by whoever ends the match. */
   narrative: string;
+  /**
+   * Fight tape, replay log and per-fighter breakdowns. OPTIONAL because no
+   * live match produces one yet — nothing records a tape server-side. A real
+   * match omits it and the summary page falls back to DEMO_ANALYTICS behind a
+   * visible "sample data" marker, rather than the deep-dive section vanishing.
+   */
+  analytics?: MatchAnalytics;
 }
 
 export const LAST_MATCH_KEY = "boxmegle:last-match";

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Press_Start_2P } from "next/font/google";
 import { ServerStatusCard } from "@/components/ui/ServerStatusCard";
@@ -59,6 +60,16 @@ export default function Home() {
   return (
     <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden font-sans">
       <LandingBackground />
+
+      {/* Reachable without queueing — the profile was previously only linked
+          from the summary, so you had to finish a fight to see it. */}
+      <Link
+        href="/profile"
+        className="absolute right-6 top-5 z-20 rounded-full border-2 border-black bg-white/70 px-5 py-2 text-sm font-medium text-black shadow-sm transition-colors hover:bg-black hover:text-white sm:right-10"
+      >
+        Profile
+      </Link>
+
       <main className="relative z-10 flex w-full max-w-md flex-col items-center gap-10 px-6 py-32 text-center">
         <h1
           className={`${pixelFont.className} text-4xl leading-relaxed tracking-tight text-black [image-rendering:pixelated] sm:text-6xl`}
@@ -66,34 +77,38 @@ export default function Home() {
         >
           boxmegle
         </h1>
-        <p className="max-w-sm text-lg leading-6 text-zinc-600">
-          Omegle for boxing. Get matched with a random stranger and fight.
-          Therapy is expensive. This is free lol.
-        </p>
-        <form
-          onSubmit={handleSubmit}
-          className="flex w-full flex-col gap-3 sm:flex-row"
-        >
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Enter your name"
-            className="h-12 flex-1 rounded-full border border-zinc-300 bg-white/90 px-5 text-base text-black placeholder-zinc-400 shadow-sm outline-none backdrop-blur focus:border-black"
-          />
-          <button
-            type="submit"
-            disabled={joining}
-            className="flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-base font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+        {/* The error shares this column so its line is reserved whether or not
+            there is a message — otherwise appearing mid-layout shoves the
+            title and the form up the page. */}
+        <div className="flex w-full flex-col gap-3">
+          <form
+            onSubmit={handleSubmit}
+            className="flex w-full flex-col gap-3 sm:flex-row"
           >
-            {joining ? "Joining…" : "Enter!"}
-          </button>
-        </form>
-        {joinError && <p className="text-xs text-red-600">{joinError}</p>}
-        <p className="text-xs text-zinc-400">
-          Mouthguard sold separately. We are not liable for lost teeth or
-          lost pride.
-        </p>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter your name"
+              className="h-12 flex-1 rounded-full border border-zinc-300 bg-white/90 px-5 text-base text-black placeholder-zinc-400 shadow-sm outline-none backdrop-blur focus:border-black"
+            />
+            <button
+              type="submit"
+              disabled={joining}
+              className="flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-base font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {joining ? "Joining…" : "Enter!"}
+            </button>
+          </form>
+          <p
+            role="alert"
+            aria-live="polite"
+            className="min-h-6 text-base font-semibold text-red-600"
+          >
+            {joinError}
+          </p>
+        </div>
+
       </main>
       <ServerStatusCard online={matchmakerUp} />
     </div>

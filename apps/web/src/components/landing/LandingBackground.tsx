@@ -4,11 +4,19 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import {
   COMIC_WORDS,
+  MAT_TOP,
+  buildCrowd,
   buildEnvironment,
   buildRing,
   createBaseScene,
   makeComicSprite,
 } from "@/lib/three/ring-builders";
+
+/**
+ * The duck's own origin sits above its feet — its vest hangs to -0.19 — so it
+ * rides that far above the canvas rather than at it.
+ */
+const DUCK_BASE_Y = MAT_TOP + 0.19;
 
 function buildRefereeDuck(): THREE.Group {
   const duck = new THREE.Group();
@@ -78,7 +86,7 @@ function buildRefereeDuck(): THREE.Group {
     duck.add(stripe);
   }
 
-  duck.position.set(0, 0.87, 0.4);
+  duck.position.set(0, DUCK_BASE_Y, 0.4);
   duck.name = "duck";
   return duck;
 }
@@ -98,6 +106,9 @@ export function LandingBackground() {
     scene.add(ring);
     scene.add(buildEnvironment());
 
+    const crowd = buildCrowd();
+    scene.add(crowd.group);
+
     const comicSprites: { sprite: THREE.Sprite; born: number }[] = [];
     let nextComicAt = 1;
 
@@ -108,13 +119,17 @@ export function LandingBackground() {
       const radius = 9.5;
       camera.position.x = Math.sin(t * 0.08) * radius;
       camera.position.z = Math.cos(t * 0.08) * radius + 2;
-      camera.position.y = 3.2 + Math.sin(t * 0.15) * 0.4;
-      camera.lookAt(0, 1.2, 0);
+      camera.position.y = 2.8 + Math.sin(t * 0.15) * 0.4;
+      // Aim at the middle of the ropes, so the shorter ring stays centred
+      // instead of sitting low in frame.
+      camera.lookAt(0, MAT_TOP + 0.6, 0);
 
       if (duck) {
-        duck.position.y = 0.87 + Math.sin(t * 2.2) * 0.05;
+        duck.position.y = DUCK_BASE_Y + Math.sin(t * 2.2) * 0.05;
         duck.rotation.y = Math.sin(t * 0.8) * 0.4;
       }
+
+      crowd.update(t);
 
       if (t >= nextComicAt) {
         const word =
@@ -122,7 +137,7 @@ export function LandingBackground() {
         const sprite = makeComicSprite(word);
         sprite.position.set(
           (Math.random() - 0.5) * 3,
-          1.6 + Math.random() * 0.8,
+          MAT_TOP + 0.7 + Math.random() * 0.7,
           (Math.random() - 0.5) * 3,
         );
         scene.add(sprite);
@@ -168,6 +183,7 @@ export function LandingBackground() {
         entry.sprite.material.map?.dispose();
         entry.sprite.material.dispose();
       }
+      crowd.dispose();
       renderer.dispose();
       renderer.forceContextLoss();
       container.removeChild(renderer.domElement);

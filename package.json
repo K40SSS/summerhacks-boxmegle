@@ -11,8 +11,6 @@
     "@types/node": "^26.2.0",
     "concurrently": "^9.1.2",
     "drizzle-kit": "^0.31.10",
-    "next": "16.3.0",
     "typescript": "^7.0.2"
-  },
-  "packageManager": "pnpm@10.30.2"
+  }
 }

@@ -11,6 +11,8 @@ import {
   type MatchPhase,
   type MatchPlayer,
 } from './matchState';
+import { ReplayRecorder } from '../replay/recorder';
+import { newGameId, persistCompletedGame } from '../replay/persist';
 
 interface PlayerStateWire {
   playerUuid: string;
@@ -72,6 +74,13 @@ type Session = {
   // meters, deadlines, punch cooldowns and guard hysteresis instead of
   // starting from a blank FSM with full health.
   match: MatchState;
+  // Keeps every accepted pose frame so the fight can be watched back. Lives
+  // beside `match` for the same reason: it must survive a reconnect, or the
+  // tape loses everything before the blip.
+  replay: ReplayRecorder;
+  // `checkMatchEnd` is already idempotent, but persistence is not — this
+  // guarantees one row per session even if that ever changes.
+  persisted: boolean;
   cleanupTimer: NodeJS.Timeout | null;
 };
 
@@ -106,6 +115,8 @@ gameSocketServer.on('connection', (socket, req: IncomingMessage) => {
       sockets: new Map(),
       ready: new Set(),
       match: new MatchState(),
+      replay: new ReplayRecorder(),
+      persisted: false,
       cleanupTimer: null,
     };
     sessions.set(sessionId, session);
@@ -140,11 +151,202 @@ gameSocketServer.on('connection', (socket, req: IncomingMessage) => {
   }
 
   socket.on('message', (raw) => {
+    let parsed: unknown;
     try {
-      handleMessage(sessionId, playerUuid, session!, raw.toString());
-    } catch (err) {
-      console.error(`[game_session:${sessionId}] error handling message from ${playerUuid}`, err);
+      parsed = JSON.parse(raw.toString());
+    } catch {
+      parsed = null;
     }
+
+    // Step 1 — ingest. Pose frames terminate here: they are the server's
+    // input, not something the opponent needs. The peer renders from the
+    // authoritative snapshot (step 4), so relaying raw landmarks on would
+    // double the session's bandwidth to say the same thing twice.
+    const pose = parsePoseMessage(parsed);
+    if (pose) {
+      const player = session!.match.get(playerUuid);
+      if (!player) return;
+
+      // One reading of the clock for the whole frame: the ingest stamp and
+      // the advance have to describe the same instant.
+      const now = performance.now();
+      const frame = player.ingest.handle(pose, now);
+      if (!frame) return;
+
+      // Step 1b — tape the frame. Everything on a replay is timed from the
+      // opening bell, so pre-bell warmup frames (one fighter shadowboxing
+      // while the other connects) have no place on the timeline and are
+      // dropped rather than given a negative timestamp.
+      const bell = session!.match.matchStartedAt;
+      const sinceBell = bell === null ? -1 : frame.timestamp - bell;
+      if (sinceBell >= 0 && session!.match.phase !== 'ENDED') {
+        session!.replay.capture(playerUuid, player.state.slot, sinceBell, pose.lm, pose.ar);
+      }
+
+      // Step 2 — settle both fighters' meters BEFORE anything reads them. A
+      // guard that drained to zero since the last frame is broken here, not
+      // on some later tick, so the block edges below and (step 3) the punch
+      // resolution see the state as it truly is at `now`.
+      const advanced = session!.match.advance(now);
+      for (const broken of advanced.guardBroke) {
+        console.log(
+          `[game_session:${sessionId}] ${broken.playerUuid} GUARD_BREAK (drained) ${summarize(broken.state)}`,
+        );
+      }
+      for (const recovered of advanced.stunEnded) {
+        console.log(`[game_session:${sessionId}] ${recovered.playerUuid} stun expired`);
+      }
+
+      // Block edges first: they are state, and a guard raised or dropped on
+      // this frame has to be in place before anything resolves against it.
+      const applied = session!.match.applyBlockEdges(player, frame.actions, now);
+      for (const action of applied) {
+        console.log(
+          `[game_session:${sessionId}] ${playerUuid} ${describeAction(action)} ${summarize(player.state)}`,
+        );
+      }
+
+      // Step 3 — resolve this frame's punches against the opponent's pose
+      // and state.
+      const resolutions = session!.match.resolvePunches(player, frame.actions, now);
+      for (const resolution of resolutions) {
+        console.log(
+          `[game_session:${sessionId}] ${playerUuid} ${describeResolution(resolution)}`,
+        );
+        if (sinceBell < 0) continue;
+        // Onto the tape's event log, so a replay can caption itself and the
+        // summary can name the hardest punch of the fight. Speed comes from
+        // this frame's features rather than the action, which carries an
+        // impact point but not how fast the wrist got there.
+        const { punch, resolved } = resolution;
+        session!.replay.logPunch({
+          atMs: sinceBell,
+          by: playerUuid,
+          punchType: punch.punchType,
+          hand: punch.hand,
+          result: resolved.outcome.result,
+          zone: resolved.outcome.zone,
+          healthDamage: resolved.outcome.healthDamage,
+          guardDamage: resolved.outcome.guardDamage,
+          speed:
+            punch.hand === 'LEFT'
+              ? frame.features.leftWristSpeed
+              : frame.features.rightWristSpeed,
+        });
+      }
+
+      const { accepted, dropped } = player.ingest.stats;
+      if (accepted % FRAME_LOG_INTERVAL === 0) {
+        console.log(
+          `[game_session:${sessionId}] ${playerUuid} frames accepted=${accepted} dropped=${dropped} ${summarize(player.state)}`,
+        );
+      }
+
+      // Step 4 — broadcast the authoritative snapshot to both sockets, so
+      // each client's HUD reflects real match state rather than a guess.
+      // Priority for the single-event summary: a punch is the most
+      // informative thing that can happen on a frame, then a guard break,
+      // then a block edge.
+      let lastEvent: MatchStateEvent | undefined;
+      const punchResolution = resolutions[0];
+      if (punchResolution) {
+        lastEvent = {
+          kind: 'punch',
+          attackerUuid: playerUuid,
+          defenderUuid: punchResolution.defender.playerUuid,
+          punchType: punchResolution.punch.punchType,
+          hand: punchResolution.punch.hand,
+          result: punchResolution.resolved.outcome.result,
+          zone: punchResolution.resolved.outcome.zone,
+          healthDamage: punchResolution.resolved.outcome.healthDamage,
+          guardDamage: punchResolution.resolved.outcome.guardDamage,
+        };
+      } else if (advanced.guardBroke.length > 0) {
+        lastEvent = { kind: 'guard-break', playerUuid: advanced.guardBroke[0].playerUuid };
+      } else {
+        const blockEdge = applied.find((a) => a.type === 'BLOCK_START' || a.type === 'BLOCK_END');
+        if (blockEdge) {
+          lastEvent = {
+            kind: blockEdge.type === 'BLOCK_START' ? 'block-start' : 'block-end',
+            playerUuid,
+          };
+        }
+      }
+
+      const matchStateMessage: MatchStateMessage = {
+        type: 'match-state',
+        now,
+        matchStartedAt: session!.match.matchStartedAt,
+        phase: session!.match.phase,
+        timeLeftMs: session!.match.timeLeftMs(now),
+        players: session!.match.players().map(toPlayerStateWire),
+        ...(lastEvent ? { lastEvent } : {}),
+      };
+      const matchStatePayload = JSON.stringify(matchStateMessage);
+      for (const [, peerSocket] of session!.sockets) {
+        if (peerSocket.readyState === peerSocket.OPEN) peerSocket.send(matchStatePayload);
+      }
+
+      // Step 5 — end-of-match check. Idempotent, so calling it every frame is
+      // fine; it only ever fires once.
+      const ended = session!.match.checkMatchEnd(now);
+      if (ended) {
+        // The id is minted here rather than read back from the insert, so
+        // `match-end` can carry it immediately. Both clients navigate to the
+        // summary the moment this arrives; making them wait on a database
+        // round trip (let alone the tape upload) to learn which fight they
+        // just had would put a stall on the most visible transition in the
+        // app. The row lands a moment later under this same id.
+        const gameId = newGameId();
+        const endMessage = {
+          type: 'match-end',
+          gameId,
+          reason: ended.reason,
+          winnerUuid: ended.winnerUuid,
+          durationMs: ended.durationMs,
+          players: ended.players.map(toPlayerStateWire),
+        };
+        const endPayload = JSON.stringify(endMessage);
+        for (const [, peerSocket] of session!.sockets) {
+          if (peerSocket.readyState === peerSocket.OPEN) peerSocket.send(endPayload);
+        }
+        console.log(
+          `[game_session:${sessionId}] match ended: ${ended.reason}, winner=${ended.winnerUuid ?? 'draw'}, game=${gameId}`,
+        );
+
+        if (!session!.persisted) {
+          session!.persisted = true;
+          // Deliberately not awaited: the result is already delivered and the
+          // websocket handler has no one left to report a write failure to.
+          void persistCompletedGame({
+            gameId,
+            sessionId,
+            winnerUuid: ended.winnerUuid,
+            reason: ended.reason,
+            durationMs: ended.durationMs,
+            playerUuids: ended.players.map((p) => p.playerUuid),
+            recorder: session!.replay,
+          });
+        }
+      }
+
+      return;
+    }
+
+    if (typeof parsed === 'object' && parsed !== null && (parsed as { type?: unknown }).type === 'peer-ready') {
+      session!.ready.add(playerUuid);
+    }
+
+    const relayed: string[] = [];
+    for (const [uuid, peerSocket] of session!.sockets) {
+      if (uuid !== playerUuid && peerSocket.readyState === peerSocket.OPEN) {
+        peerSocket.send(raw.toString());
+        relayed.push(uuid);
+      }
+    }
+    console.log(
+      `[game_session:${sessionId}] ${playerUuid} -> ${raw.toString()} (relayed to ${relayed.length ? relayed.join(', ') : 'nobody'})`,
+    );
   });
 
   socket.on('close', () => {
@@ -169,149 +371,3 @@ gameSocketServer.on('connection', (socket, req: IncomingMessage) => {
     }
   });
 });
-
-function handleMessage(sessionId: string, playerUuid: string, session: Session, raw: string): void {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    parsed = null;
-  }
-
-  // Step 1 — ingest. Pose frames terminate here: they are the server's
-  // input, not something the opponent needs. The peer renders from the
-  // authoritative snapshot (step 4), so relaying raw landmarks on would
-  // double the session's bandwidth to say the same thing twice.
-  const pose = parsePoseMessage(parsed);
-  if (pose) {
-    const player = session.match.get(playerUuid);
-    if (!player) return;
-
-    // One reading of the clock for the whole frame: the ingest stamp and
-    // the advance have to describe the same instant.
-    const now = performance.now();
-    const frame = player.ingest.handle(pose, now);
-    if (!frame) return;
-
-    // Step 2 — settle both fighters' meters BEFORE anything reads them. A
-    // guard that drained to zero since the last frame is broken here, not
-    // on some later tick, so the block edges below and (step 3) the punch
-    // resolution see the state as it truly is at `now`.
-    const advanced = session.match.advance(now);
-    for (const broken of advanced.guardBroke) {
-      console.log(
-        `[game_session:${sessionId}] ${broken.playerUuid} GUARD_BREAK (drained) ${summarize(broken.state)}`,
-      );
-    }
-    for (const recovered of advanced.stunEnded) {
-      console.log(`[game_session:${sessionId}] ${recovered.playerUuid} stun expired`);
-    }
-
-    // Block edges first: they are state, and a guard raised or dropped on
-    // this frame has to be in place before anything resolves against it.
-    const applied = session.match.applyBlockEdges(player, frame.actions, now);
-    for (const action of applied) {
-      console.log(
-        `[game_session:${sessionId}] ${playerUuid} ${describeAction(action)} ${summarize(player.state)}`,
-      );
-    }
-
-    // Step 3 — resolve this frame's punches against the opponent's pose
-    // and state.
-    const resolutions = session.match.resolvePunches(player, frame.actions, now);
-    for (const resolution of resolutions) {
-      console.log(
-        `[game_session:${sessionId}] ${playerUuid} ${describeResolution(resolution)}`,
-      );
-    }
-
-    const { accepted, dropped } = player.ingest.stats;
-    if (accepted % FRAME_LOG_INTERVAL === 0) {
-      console.log(
-        `[game_session:${sessionId}] ${playerUuid} frames accepted=${accepted} dropped=${dropped} ${summarize(player.state)}`,
-      );
-    }
-
-    // Step 4 — broadcast the authoritative snapshot to both sockets, so
-    // each client's HUD reflects real match state rather than a guess.
-    // Priority for the single-event summary: a punch is the most
-    // informative thing that can happen on a frame, then a guard break,
-    // then a block edge.
-    let lastEvent: MatchStateEvent | undefined;
-    const punchResolution = resolutions[0];
-    if (punchResolution) {
-      lastEvent = {
-        kind: 'punch',
-        attackerUuid: playerUuid,
-        defenderUuid: punchResolution.defender.playerUuid,
-        punchType: punchResolution.punch.punchType,
-        hand: punchResolution.punch.hand,
-        result: punchResolution.resolved.outcome.result,
-        zone: punchResolution.resolved.outcome.zone,
-        healthDamage: punchResolution.resolved.outcome.healthDamage,
-        guardDamage: punchResolution.resolved.outcome.guardDamage,
-      };
-    } else if (advanced.guardBroke.length > 0) {
-      lastEvent = { kind: 'guard-break', playerUuid: advanced.guardBroke[0].playerUuid };
-    } else {
-      const blockEdge = applied.find((a) => a.type === 'BLOCK_START' || a.type === 'BLOCK_END');
-      if (blockEdge) {
-        lastEvent = {
-          kind: blockEdge.type === 'BLOCK_START' ? 'block-start' : 'block-end',
-          playerUuid,
-        };
-      }
-    }
-
-    const matchStateMessage: MatchStateMessage = {
-      type: 'match-state',
-      now,
-      matchStartedAt: session.match.matchStartedAt,
-      phase: session.match.phase,
-      timeLeftMs: session.match.timeLeftMs(now),
-      players: session.match.players().map(toPlayerStateWire),
-      ...(lastEvent ? { lastEvent } : {}),
-    };
-    const matchStatePayload = JSON.stringify(matchStateMessage);
-    for (const [, peerSocket] of session.sockets) {
-      if (peerSocket.readyState === peerSocket.OPEN) peerSocket.send(matchStatePayload);
-    }
-
-    // Step 5 — end-of-match check. Idempotent, so calling it every frame is
-    // fine; it only ever fires once.
-    const ended = session.match.checkMatchEnd(now);
-    if (ended) {
-      const endMessage = {
-        type: 'match-end',
-        reason: ended.reason,
-        winnerUuid: ended.winnerUuid,
-        durationMs: ended.durationMs,
-        players: ended.players.map(toPlayerStateWire),
-      };
-      const endPayload = JSON.stringify(endMessage);
-      for (const [, peerSocket] of session.sockets) {
-        if (peerSocket.readyState === peerSocket.OPEN) peerSocket.send(endPayload);
-      }
-      console.log(
-        `[game_session:${sessionId}] match ended: ${ended.reason}, winner=${ended.winnerUuid ?? 'draw'}`,
-      );
-    }
-
-    return;
-  }
-
-  if (typeof parsed === 'object' && parsed !== null && (parsed as { type?: unknown }).type === 'peer-ready') {
-    session.ready.add(playerUuid);
-  }
-
-  const relayed: string[] = [];
-  for (const [uuid, peerSocket] of session.sockets) {
-    if (uuid !== playerUuid && peerSocket.readyState === peerSocket.OPEN) {
-      peerSocket.send(raw);
-      relayed.push(uuid);
-    }
-  }
-  console.log(
-    `[game_session:${sessionId}] ${playerUuid} -> ${raw} (relayed to ${relayed.length ? relayed.join(', ') : 'nobody'})`,
-  );
-}

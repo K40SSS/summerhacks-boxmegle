@@ -47,6 +47,12 @@ export interface MatchStateMessage {
 
 export interface MatchEndMessage {
   type: "match-end";
+  /**
+   * Row id the server is about to write to `completed_games`, minted before
+   * the write so it can travel on this message. Optional because a server
+   * that predates replay persistence doesn't send one.
+   */
+  gameId?: string;
   reason: "KO" | "DECISION" | "DRAW";
   winnerUuid: string | null;
   durationMs: number;

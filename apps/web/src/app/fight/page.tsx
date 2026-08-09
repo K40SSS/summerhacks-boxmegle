@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Peer, { type MediaConnection } from "peerjs";
 import { GAME_RULES, type RawLandmark } from "game-mechanics";
@@ -13,6 +13,13 @@ import type {
   PlayerStateWire,
 } from "@/vision/matchWire";
 import { LAST_MATCH_KEY, type FighterSummary, type MatchSummary } from "@/lib/match-summary";
+import {
+  fighterStats,
+  newMatchStats,
+  recordMatchState,
+  strongestPunch,
+  type MatchStats,
+} from "@/lib/match-stats";
 
 /** How often to broadcast local landmarks to the opponent over the game socket. */
 const POSE_SEND_INTERVAL_MS = 100;
@@ -26,40 +33,17 @@ function wsUrl(path: string) {
 }
 
 /**
- * Cross-network calls (different NATs/networks) usually can't connect
- * peer-to-peer and need a TURN relay. Falls back to PeerJS's default
- * (unreliable, public) TURN servers if this fetch fails.
- */
-async function fetchIceServers(): Promise<RTCIceServer[] | null> {
-  try {
-    const res = await fetch(new URL("/turn-credentials", MATCHMAKER_URL));
-    if (!res.ok) return null;
-    const data = (await res.json()) as { iceServers: RTCIceServer[] };
-    return data.iceServers;
-  } catch {
-    return null;
-  }
-}
-
-function emptyPunches(): FighterSummary["punches"] {
-  return {
-    JAB: { thrown: 0, landed: 0 },
-    CROSS: { thrown: 0, landed: 0 },
-    HOOK: { thrown: 0, landed: 0 },
-    UPPERCUT: { thrown: 0, landed: 0 },
-  };
-}
-
-/**
- * The server only tracks health/damageDealt/guardBreaks today; everything
- * else the summary page wants (peak speed, winded count, guard exposure,
- * per-punch-type counts, elo, win/loss record) has no source yet, so it's
- * zeroed/placeholdered here rather than fabricated.
+ * Health, damage and guard breaks come straight off the final snapshot;
+ * punch counts, winded count and guard exposure are accumulated from the
+ * `match-state` stream (see lib/match-stats.ts). Peak speed, elo and the
+ * win/loss record still have no source anywhere, so they stay zeroed rather
+ * than fabricated.
  */
 function toFighterSummary(
   player: PlayerStateWire | undefined,
   corner: FighterSummary["corner"],
   name: string,
+  stats: MatchStats,
 ): FighterSummary {
   return {
     name,
@@ -67,13 +51,11 @@ function toFighterSummary(
     healthAfter: player?.health ?? 0,
     damageDealt: player?.damageDealt ?? 0,
     guardBreaks: player?.guardBreaks ?? 0,
-    timesWinded: 0,
     peakSpeed: 0,
-    guardExposurePct: 0,
-    punches: emptyPunches(),
     eloBefore: 1000,
     eloAfter: 1000,
     record: { wins: 0, losses: 0 },
+    ...fighterStats(stats, player?.playerUuid ?? null),
   };
 }
 
@@ -81,6 +63,7 @@ function buildMatchSummary(
   ended: MatchEndMessage,
   uuid: string,
   opponentUuid: string,
+  stats: MatchStats,
 ): MatchSummary {
   const you = ended.players.find((p) => p.playerUuid === uuid);
   const opponent = ended.players.find((p) => p.playerUuid === opponentUuid);
@@ -91,24 +74,14 @@ function buildMatchSummary(
     durationMs: ended.durationMs,
     method: ended.reason,
     winner,
-    // No per-punch event log is tracked client-side yet, so there is no
-    // real "strongest punch" to report — zeroed placeholder.
-    strongestPunch: { type: "JAB", damage: 0, atMs: 0, speed: 0, by: "you" },
-    you: toFighterSummary(you, "blue", "You"),
-    opponent: toFighterSummary(opponent, "red", "Opponent"),
+    strongestPunch: strongestPunch(stats, uuid),
+    you: toFighterSummary(you, "blue", "You", stats),
+    opponent: toFighterSummary(opponent, "red", "Opponent", stats),
     narrative: `Match ended by ${ended.reason.toLowerCase()}.`,
   };
 }
 
 export default function Fight() {
-  return (
-    <Suspense>
-      <FightPage />
-    </Suspense>
-  );
-}
-
-function FightPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session");
@@ -130,6 +103,12 @@ function FightPage() {
   const remoteLandmarksRef = useRef<RawLandmark[] | null>(null);
   const lastPoseSentAtRef = useRef(0);
 
+  // Summary tallies accumulate for the lifetime of this mount, which is
+  // exactly the lifetime of the fight — leaving for /summary unmounts. Not
+  // reset when the socket effect re-runs, so a StrictMode double-mount or a
+  // reconnect inside the server's grace window keeps the fight's history.
+  const statsRef = useRef<MatchStats>(newMatchStats());
+
   usePoseEngine({
     videoRef: localVideoRef,
     active: localStreamReady,
@@ -144,7 +123,13 @@ function FightPage() {
         now - lastPoseSentAtRef.current >= POSE_SEND_INTERVAL_MS
       ) {
         lastPoseSentAtRef.current = now;
-        socket.send(JSON.stringify({ type: "pose", t: msg.timestamp, lm: msg.landmarks }));
+        // `ar` is only for the replay recorder: landmark x and y are each
+        // normalized against their own axis, so the tape needs the camera's
+        // shape to play back a fighter with the proportions it filmed.
+        const video = localVideoRef.current;
+        const ar =
+          video && video.videoHeight > 0 ? video.videoWidth / video.videoHeight : undefined;
+        socket.send(JSON.stringify({ type: "pose", t: msg.timestamp, lm: msg.landmarks, ar }));
         socket.send(JSON.stringify({ type: "pose-render", landmarks: msg.landmarks }));
       }
     },
@@ -233,17 +218,11 @@ function FightPage() {
       setLocalStreamReady(true);
 
       const matchmakerUrl = new URL(MATCHMAKER_URL);
-      const iceServers = await fetchIceServers();
       peer = new Peer(peerId, {
         host: matchmakerUrl.hostname,
-        port: matchmakerUrl.port
-          ? Number(matchmakerUrl.port)
-          : matchmakerUrl.protocol === "https:"
-            ? 443
-            : 80,
+        port: matchmakerUrl.port ? Number(matchmakerUrl.port) : undefined,
         path: "/peerjs",
         secure: matchmakerUrl.protocol === "https:",
-        ...(iceServers ? { config: { iceServers } } : {}),
       });
 
       const handleCall = (call: MediaConnection) => {
@@ -323,14 +302,22 @@ function FightPage() {
         return;
       }
       if (typeof data === "object" && data !== null && type === "match-state") {
-        setMatchState(data as MatchStateMessage);
+        const state = data as MatchStateMessage;
+        recordMatchState(statsRef.current, state);
+        setMatchState(state);
         return;
       }
       if (typeof data === "object" && data !== null && type === "match-end") {
         const ended = data as MatchEndMessage;
-        const summary = buildMatchSummary(ended, uuid, opponentUuid);
+        const summary = buildMatchSummary(ended, uuid, opponentUuid, statsRef.current);
         sessionStorage.setItem(LAST_MATCH_KEY, JSON.stringify(summary));
-        router.push("/summary");
+        // Carrying the game id lets the summary pull this fight's replay tape.
+        // The server mints the id up front precisely so it can travel on this
+        // message, ahead of the row and the upload it names.
+        const query = ended.gameId
+          ? `?game=${encodeURIComponent(ended.gameId)}&u=${encodeURIComponent(uuid)}`
+          : "";
+        router.push(`/summary${query}`);
         return;
       }
       console.log("game_session message", event.data);

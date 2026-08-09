@@ -1,10 +1,22 @@
 "use client";
 
-import { useMemo, useSyncExternalStore } from "react";
+import { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Press_Start_2P } from "next/font/google";
 import { PUNCH_STATS, type PunchType } from "game-mechanics";
 import { FighterModel } from "@/components/fighter/FighterModel";
+import {
+  ChartFrame,
+  GroupedBarChart,
+  HandBalanceBar,
+  LineChart,
+} from "@/components/summary/charts";
+import { MatchReplay } from "@/components/summary/MatchReplay";
+import { Panel } from "@/components/summary/ProfilePanels";
+import { CORNER_HEX, DEMO_ANALYTICS } from "@/lib/summary-analytics";
+import { replayDurationMs, replayEventsFrom, sidesOf } from "@/lib/replay-view";
+import { useReplay } from "@/lib/use-replay";
 import {
   DEMO_MATCH,
   LAST_MATCH_KEY,
@@ -22,6 +34,9 @@ const pixelFont = Press_Start_2P({
 const CORNER_COLORS = { red: 0xe34948, blue: 0x2a78d6 } as const;
 
 const PUNCH_ORDER: PunchType[] = ["JAB", "CROSS", "HOOK", "UPPERCUT"];
+
+const MATCHMAKER_URL =
+  process.env.NEXT_PUBLIC_MATCHMAKER_URL ?? "http://localhost:4000";
 
 function Stat({
   label,
@@ -138,19 +153,132 @@ const readSnapshot = () => {
   }
 };
 
-export default function SummaryPage() {
+/** A row from /games/:id — real metadata, no per-punch stats (see below). */
+interface LoggedGameDetail {
+  id: string;
+  completedAt: string | null;
+  result: "W" | "L" | "D";
+  you: { uuid: string; name: string } | null;
+  opponent: { uuid: string; name: string } | null;
+}
+
+/**
+ * Reopen a fight from the log. `completed_games` stores the winner, the
+ * strongest punch and a replay key — but no full stat payload, so a reopened
+ * fight shows its REAL identity (who, when, what result) over sample stats.
+ * Storing the rest needs a `summary jsonb` column on that table.
+ */
+function useLoggedGame(gameId: string | null, viewer: string | null) {
+  const [game, setGame] = useState<LoggedGameDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!gameId) return;
+    let cancelled = false;
+    const query = viewer ? `?viewer=${encodeURIComponent(viewer)}` : "";
+    fetch(`${MATCHMAKER_URL}/games/${encodeURIComponent(gameId)}${query}`)
+      .then((res) =>
+        res.ok ? res.json() : Promise.reject(new Error(res.status === 404 ? "not found" : `status ${res.status}`)),
+      )
+      .then((data: { game?: LoggedGameDetail }) => {
+        if (!cancelled && data.game) setGame(data.game);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId, viewer]);
+
+  return { game, error };
+}
+
+function SummaryContent() {
+  const searchParams = useSearchParams();
+  const gameId = searchParams.get("game");
+  const viewerUuid = searchParams.get("u");
+  const { game: loggedGame, error: gameError } = useLoggedGame(gameId, viewerUuid);
+
   // sessionStorage is an external store the server can't see: SSR/hydration
   // renders the demo fixture (server snapshot null), then React swaps in the
   // stored fight if the client snapshot differs.
   const raw = useSyncExternalStore(subscribeNever, readSnapshot, () => null);
   const stored = useMemo(() => parseMatch(raw), [raw]);
-  const match = stored ?? DEMO_MATCH;
-  const isDemo = stored === null;
+  const baseMatch = stored ?? DEMO_MATCH;
+  const isDemo = stored === null && !loggedGame;
+
+  // Overlay the reopened fight's real identity onto the fixture's stats.
+  const match = useMemo(() => {
+    if (!loggedGame) return baseMatch;
+    return {
+      ...baseMatch,
+      winner:
+        loggedGame.result === "D"
+          ? null
+          : loggedGame.result === "W"
+            ? ("you" as const)
+            : ("opponent" as const),
+      you: { ...baseMatch.you, name: loggedGame.you?.name ?? baseMatch.you.name },
+      opponent: {
+        ...baseMatch.opponent,
+        name: loggedGame.opponent?.name ?? baseMatch.opponent.name,
+      },
+    };
+  }, [baseMatch, loggedGame]);
 
   const winner =
     match.winner === null ? null : match.winner === "you" ? match.you : match.opponent;
   const strongestBy =
     match.strongestPunch.by === "you" ? match.you.name : match.opponent.name;
+
+  // Nothing records the per-window charts yet, so the deep dive still falls
+  // back to the fixture. The `analyticsAreSample` flag is what the page shows
+  // the player, rather than passing sample numbers off as their fight.
+  const analytics = match.analytics ?? DEMO_ANALYTICS;
+  const analyticsAreSample = match.analytics === undefined;
+
+  // The replay tape IS real whenever one exists — recorded skeletons and the
+  // punch log the server wrote at the bell — even while the charts around it
+  // are still sample data. It loads separately from the row because it is two
+  // orders of magnitude larger and arrives seconds later.
+  const { tape, status: replayStatus } = useReplay(gameId);
+  const sides = useMemo(() => (tape ? sidesOf(tape, viewerUuid) : null), [tape, viewerUuid]);
+  const replayEvents = useMemo(
+    () => (tape && sides ? replayEventsFrom(tape, sides) : analytics.replay),
+    [tape, sides, analytics.replay],
+  );
+  // A tape knows its own length; the stored summary's duration is the fallback.
+  const replayLengthMs = tape ? replayDurationMs(tape) : match.durationMs;
+
+  // The strongest-punch card seeks the shared replay instead of owning a
+  // second player. Bumped through a counter so re-clicking the same punch
+  // still re-seeks.
+  const [seek, setSeek] = useState<{ atMs: number; nonce: number } | null>(null);
+
+  const names = { you: match.you.name, opponent: match.opponent.name };
+  const corners = { you: match.you.corner, opponent: match.opponent.corner };
+  const seriesColors = {
+    you: CORNER_HEX[match.you.corner],
+    opponent: CORNER_HEX[match.opponent.corner],
+  };
+  const seriesMeta = [
+    { name: names.you, color: seriesColors.you },
+    { name: names.opponent, color: seriesColors.opponent },
+  ];
+
+  const damageByType = {
+    you: PUNCH_ORDER.map((p) => match.you.punches[p].landed * PUNCH_STATS[p].healthDamage),
+    opponent: PUNCH_ORDER.map(
+      (p) => match.opponent.punches[p].landed * PUNCH_STATS[p].healthDamage,
+    ),
+  };
+  const punchesByType = {
+    you: PUNCH_ORDER.map((p) => match.you.punches[p].thrown),
+    opponent: PUNCH_ORDER.map((p) => match.opponent.punches[p].thrown),
+  };
+  const youTotals = totals(match.you);
+  const oppTotals = totals(match.opponent);
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden bg-white font-sans">
@@ -175,8 +303,18 @@ export default function SummaryPage() {
             {winner ? `${winner.name} wins` : "Draw"}
           </h1>
           {isDemo && (
-            <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-600">
               demo fight — your real matches will land here
+            </p>
+          )}
+          {loggedGame && (
+            <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+              from your fight log · {loggedGame.id.slice(0, 8)}
+            </p>
+          )}
+          {gameError && (
+            <p role="alert" className="font-mono text-[11px] font-semibold text-red-700">
+              couldn&apos;t load that fight ({gameError}) — showing the demo
             </p>
           )}
         </div>
@@ -201,39 +339,216 @@ export default function SummaryPage() {
           <FighterColumn fighter={match.opponent} align="right" />
         </div>
 
-        <div className="flex items-center gap-10 font-mono text-xs uppercase tracking-widest text-zinc-500">
-          <div className="flex flex-col gap-1 text-center">
-            <span className="text-zinc-400">strongest punch</span>
-            <span className="text-black">
-              {PUNCH_STATS[match.strongestPunch.type].label} —{" "}
-              {match.strongestPunch.damage} dmg
-            </span>
-            <span className="text-zinc-500">
-              {strongestBy} @ {formatClock(match.strongestPunch.atMs)} ·{" "}
-              {match.strongestPunch.speed.toFixed(1)} sw/s
-            </span>
-          </div>
-        </div>
-
         <p className="max-w-2xl text-center text-sm leading-6 text-zinc-600">
           {match.narrative}
         </p>
 
+        {/* ---- headline numbers ------------------------------------------ */}
+        <section className="grid w-full grid-cols-2 gap-px overflow-hidden rounded-xl border border-black/10 bg-black/10 sm:grid-cols-4">
+          {[
+            { label: "accuracy", value: `${youTotals.accuracy}%`, sub: `${youTotals.landed} of ${youTotals.thrown} landed` },
+            { label: "damage dealt", value: `${match.you.damageDealt}`, sub: `${oppTotals.accuracy}% taken back` },
+            { label: "total punches", value: `${youTotals.thrown}`, sub: `${oppTotals.thrown} thrown at you` },
+            { label: "damage blocked", value: `${analytics.you.damageBlocked}`, sub: `${analytics.you.punchesBlocked} punches on the guard` },
+          ].map((tile) => (
+            <div key={tile.label} className="flex flex-col gap-1 bg-white p-5">
+              <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+                {tile.label}
+              </span>
+              <span className="text-3xl font-bold leading-none tabular-nums text-black">
+                {tile.value}
+              </span>
+              <span className="font-mono text-[11px] text-zinc-600">{tile.sub}</span>
+            </div>
+          ))}
+        </section>
+
+        {analyticsAreSample && (
+          <p className="w-full rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-center font-mono text-[11px] text-amber-900">
+            {sides
+              ? "the replay below is your real fight — the charts and profile around it are still sample data"
+              : "sample data — the fight tape, replay and profile below are not wired to live matches yet"}
+          </p>
+        )}
+
+        {/* ---- replay ----------------------------------------------------- */}
+        <div className="grid w-full gap-5 lg:grid-cols-[1.6fr_1fr]">
+          <MatchReplay
+            tape={analytics.tape}
+            events={replayEvents}
+            durationMs={replayLengthMs}
+            names={names}
+            corners={corners}
+            jumpTo={seek}
+            sides={sides}
+            status={replayStatus}
+          />
+
+          <Panel title="strongest punch" aside={strongestBy}>
+            <div className="flex flex-col gap-1">
+              <span className="text-4xl font-bold leading-none text-black">
+                {match.strongestPunch.damage}
+                <span className="ml-1 text-lg font-medium text-zinc-600">dmg</span>
+              </span>
+              <span className="font-mono text-xs text-zinc-700">
+                {PUNCH_STATS[match.strongestPunch.type].label} @{" "}
+                {formatClock(match.strongestPunch.atMs)} ·{" "}
+                {match.strongestPunch.speed.toFixed(1)} sw/s
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setSeek((s) => ({
+                  atMs: match.strongestPunch.atMs,
+                  nonce: (s?.nonce ?? 0) + 1,
+                }))
+              }
+              className="self-start rounded-sm border-2 border-black px-5 py-2 font-mono text-xs font-semibold uppercase tracking-widest text-black transition-colors hover:bg-black hover:text-white"
+            >
+              Replay this punch
+            </button>
+            <p className="font-mono text-[11px] leading-5 text-zinc-600">
+              Seeks the replay to just before impact.
+            </p>
+          </Panel>
+        </div>
+
+        {/* ---- fight tape charts ------------------------------------------ */}
+        <div className="grid w-full gap-5 lg:grid-cols-2">
+          <ChartFrame
+            title="damage over time"
+            series={seriesMeta}
+            note="Cumulative damage dealt. The crossing point is the fight — Kai only goes ahead in the last thirty seconds."
+          >
+            <LineChart
+              windowsMs={analytics.tape.windowsMs}
+              series={analytics.tape.damageCumulative}
+              names={names}
+              colors={seriesColors}
+              max={100}
+            />
+          </ChartFrame>
+
+          <ChartFrame
+            title="punches over time"
+            series={seriesMeta}
+            note="Punches thrown per 10-second window. One opens at double the output and fades; the other ramps the whole way."
+          >
+            <LineChart
+              windowsMs={analytics.tape.windowsMs}
+              series={analytics.tape.punchesThrown}
+              names={names}
+              colors={seriesColors}
+              max={10}
+            />
+          </ChartFrame>
+
+          <ChartFrame
+            title="fatigue curve"
+            series={seriesMeta}
+            note="Stamina remaining. Two dips to the floor are two lockouts — at zero you cannot throw at all until the meter recovers."
+          >
+            <LineChart
+              windowsMs={analytics.tape.windowsMs}
+              series={analytics.tape.stamina}
+              names={names}
+              colors={seriesColors}
+              max={100}
+              area
+            />
+          </ChartFrame>
+
+          <ChartFrame
+            title="damage distribution"
+            series={seriesMeta}
+            note="Health damage by punch type, landed only. Jabs are cheap and frequent; uppercuts are where the damage per landed punch is."
+          >
+            <GroupedBarChart
+              categories={PUNCH_ORDER.map((p) => PUNCH_STATS[p].label)}
+              series={damageByType}
+              names={names}
+              colors={seriesColors}
+            />
+          </ChartFrame>
+
+          <ChartFrame
+            title="punch mix"
+            series={seriesMeta}
+            note="Everything thrown, landed or not — the shape of each fighter's offence."
+          >
+            <GroupedBarChart
+              categories={PUNCH_ORDER.map((p) => PUNCH_STATS[p].label)}
+              series={punchesByType}
+              names={names}
+              colors={seriesColors}
+            />
+          </ChartFrame>
+
+          <Panel title="hand balance & style" aside="who throws with what">
+            <div className="flex flex-col gap-5">
+              <HandBalanceBar
+                name={names.you}
+                left={analytics.you.handBalance.left}
+                right={analytics.you.handBalance.right}
+                color={seriesColors.you}
+              />
+              <HandBalanceBar
+                name={names.opponent}
+                left={analytics.opponent.handBalance.left}
+                right={analytics.opponent.handBalance.right}
+                color={seriesColors.opponent}
+              />
+            </div>
+            <div className="flex flex-col gap-3 border-t border-black/10 pt-4">
+              {([
+                { side: "you" as const, fighter: match.you, a: analytics.you },
+                { side: "opponent" as const, fighter: match.opponent, a: analytics.opponent },
+              ]).map(({ side, fighter, a }) => (
+                <div key={side} className="flex flex-col gap-0.5">
+                  <span className="flex items-center gap-1.5 font-mono text-[11px] font-semibold text-zinc-800">
+                    <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: seriesColors[side] }} />
+                    {fighter.name} — {a.style}
+                  </span>
+                  <span className="font-mono text-[11px] leading-5 text-zinc-600">
+                    {a.styleNote} Guard down {fighter.guardExposurePct}% of the fight.
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </div>
+
+
         <div className="flex flex-wrap items-center justify-center gap-4">
           <Link
             href="/"
-            className="rounded-sm border border-black px-10 py-3 font-mono text-sm uppercase tracking-widest text-black transition-colors hover:bg-black hover:text-white"
+            className="rounded-sm border-2 border-black px-10 py-3 font-mono text-sm font-semibold uppercase tracking-widest text-black transition-colors hover:bg-black hover:text-white"
           >
             Back to start
           </Link>
-          <button
-            disabled
-            className="cursor-not-allowed rounded-sm border border-zinc-300 px-10 py-3 font-mono text-sm uppercase tracking-widest text-zinc-400"
+          <Link
+            href={viewerUuid ? `/profile?u=${encodeURIComponent(viewerUuid)}` : "/profile"}
+            className="rounded-sm border-2 border-black bg-black px-10 py-3 font-mono text-sm font-semibold uppercase tracking-widest text-white transition-colors hover:bg-zinc-800"
           >
-            Watch replay {"// soon"}
-          </button>
+            Your profile
+          </Link>
         </div>
       </main>
     </div>
+  );
+}
+
+export default function SummaryPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-1 items-center justify-center font-mono text-sm font-medium uppercase tracking-widest text-zinc-700">
+          loading summary…
+        </div>
+      }
+    >
+      <SummaryContent />
+    </Suspense>
   );
 }

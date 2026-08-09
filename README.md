@@ -40,7 +40,7 @@ pnpm install
 
 ### Environment variables
 
-Get `SUPABASE_DB_PASSWORD`, `DATABASE_URL`, `DIRECT_URL` from a teammate or the Supabase dashboard (Connect → ORM tab). `NEXT_PUBLIC_MATCHMAKER_URL` defaults to `http://localhost:4000` and only needs to change if the matchmaker runs elsewhere. `ALLOWED_ORIGINS` is a comma-separated list of origins the matchmaker server (`apps/server`) will accept CORS requests from — defaults to `http://localhost:3000`; set it to the deployed web app's origin(s) in production.
+Get `SUPABASE_DB_PASSWORD`, `DATABASE_URL`, `DIRECT_URL` from a teammate or the Supabase dashboard (Connect → ORM tab). `NEXT_PUBLIC_MATCHMAKER_URL` defaults to `http://localhost:4000` and only needs to change if the matchmaker runs elsewhere.
 
 ```bash
 cp .env.example .env

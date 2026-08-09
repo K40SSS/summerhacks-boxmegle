@@ -52,6 +52,14 @@ export const POSE_INGEST_LIMITS = {
   maxClockDriftMs: 750,
   /** Upper bound on the landmark array — MediaPipe Pose emits 33. */
   maxLandmarks: 64,
+  /**
+   * Plausible camera aspect band, from a tall phone portrait to an
+   * ultrawide. Outside it the value is dropped rather than trusted; it only
+   * feeds replay rendering, so a bad one is worth nothing and a wild one
+   * would stretch the tape into unreadability.
+   */
+  minAspect: 0.2,
+  maxAspect: 5,
 } as const;
 
 export interface PoseFrameMessage {
@@ -59,6 +67,14 @@ export interface PoseFrameMessage {
   /** Client capture time in ms. Only its deltas are used — see the note above. */
   t: number;
   lm: RawLandmark[];
+  /**
+   * Source video aspect ratio (width/height), when the client knows it. Not
+   * used by the mechanics — landmarks are normalized per axis and every
+   * detector works in shoulder widths — but the replay recorder stores it so
+   * playback can draw the fighter with the proportions the camera saw.
+   * Absent on any client that doesn't report one.
+   */
+  ar?: number;
 }
 
 export interface IngestedFrame {
@@ -105,7 +121,16 @@ export function parsePoseMessage(value: unknown): PoseFrameMessage | null {
     if (!lm[index]) return null;
   }
 
-  return { type: 'pose', t: message.t, lm };
+  // Cosmetic and optional, so a bad value is dropped rather than rejecting
+  // the frame — a stretched replay is not worth losing a punch over.
+  const ar =
+    finite(message.ar) &&
+    message.ar >= POSE_INGEST_LIMITS.minAspect &&
+    message.ar <= POSE_INGEST_LIMITS.maxAspect
+      ? message.ar
+      : undefined;
+
+  return { type: 'pose', t: message.t, lm, ...(ar === undefined ? {} : { ar }) };
 }
 
 /**
