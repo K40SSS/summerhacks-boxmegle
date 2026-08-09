@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Peer, { type MediaConnection } from "peerjs";
 import type { RawLandmark } from "game-mechanics";
+import { FightHud } from "@/components/game/FightHud";
 import { PoseOverlay } from "@/components/game/PoseOverlay";
 import { usePoseEngine } from "@/vision/use-pose-engine";
 
@@ -263,7 +264,8 @@ export default function Fight() {
           Opponent
         </span>
       </div>
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-4 py-1.5 text-center text-xs text-white/80 backdrop-blur">
+      <FightHud />
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-4 py-1.5 text-center text-[10px] text-white/50 backdrop-blur">
         session: {sessionId} · video: {videoStatus} · game socket:{" "}
         {socketStatus}
       </div>

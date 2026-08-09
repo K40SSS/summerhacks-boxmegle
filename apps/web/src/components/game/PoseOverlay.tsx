@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type RefObject } from "react";
-import { LM, type RawLandmark } from "game-mechanics";
+import { DEFAULT_HITBOX_OPTIONS, LM, type RawLandmark } from "game-mechanics";
 
 const BONES: [number, number][] = [
   [LM.LEFT_SHOULDER, LM.RIGHT_SHOULDER],
@@ -99,12 +99,34 @@ export function PoseOverlay({
       }
 
       const nose = landmarks[LM.NOSE];
-      if (nose && nose.visibility > 0.5) {
+      const leftShoulder = landmarks[LM.LEFT_SHOULDER];
+      const rightShoulder = landmarks[LM.RIGHT_SHOULDER];
+      if (
+        nose &&
+        nose.visibility > 0.5 &&
+        leftShoulder &&
+        rightShoulder &&
+        leftShoulder.visibility > 0.5 &&
+        rightShoulder.visibility > 0.5
+      ) {
         const p = px(nose);
+        const ls = px(leftShoulder);
+        const rs = px(rightShoulder);
+        const shoulderWidthPx = Math.hypot(rs.x - ls.x, rs.y - ls.y);
+        const radiusX = shoulderWidthPx * DEFAULT_HITBOX_OPTIONS.headRadiusX;
+        const radiusY = shoulderWidthPx * DEFAULT_HITBOX_OPTIONS.headRadiusY;
+
+        // Thin, barely-visible dotted outline: this is the actual head
+        // hitbox from hitboxTest(), not a pose landmark, so keep it subtle
+        // rather than styled like the skeleton bones/joints above.
+        ctx.save();
+        ctx.strokeStyle = "rgba(244, 246, 248, 0.35)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 4]);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, Math.max(2.5, cw / 400), 0, Math.PI * 2);
-        ctx.fillStyle = lineColor;
-        ctx.fill();
+        ctx.ellipse(p.x, p.y, radiusX, radiusY, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
       }
     };
     raf = requestAnimationFrame(draw);
