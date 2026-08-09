@@ -22,6 +22,15 @@ export * from "./types";
 export * from "./geometry";
 export * from "./rules";
 export * from "./playerState";
+export {
+  advanceMatch,
+  advanceTo,
+  applyGuardBreak,
+  endBlock,
+  startBlock,
+  type AdvanceOutcome,
+  type MatchAdvanceOutcome,
+} from "./advance";
 export { normalizeLandmarks, type NormalizeResult } from "./normalize";
 export {
   SMOOTHING_ALPHA,
@@ -40,6 +49,18 @@ export {
   BlockDetector,
   type BlockDetectorOptions,
 } from "./block-detector";
+export {
+  DEFAULT_IMPACT,
+  MAX_IMPACT_REACH,
+  applyPunch,
+  type PunchAction,
+  type ResolvedPunch,
+} from "./resolve";
+export {
+  PosePipeline,
+  type PipelineFrame,
+  type PosePipelineOptions,
+} from "./pipeline";
 export {
   DEFAULT_HITBOX_OPTIONS,
   hitboxTest,
