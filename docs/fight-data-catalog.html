@@ -1,0 +1,2285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boxmegle — Fight Data Catalog</title>
+<meta name="description" content="Every visualization worth building from Boxmegle match and player data, mocked against one synthetic fight — and the event schema they imply.">
+<meta property="og:title" content="Boxmegle — Fight Data Catalog">
+<meta property="og:description" content="Every visualization worth building from Boxmegle match and player data, mocked against one synthetic fight — and the event schema they imply.">
+<meta property="og:type" content="article">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A5%8A%3C/text%3E%3C/svg%3E">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+  img, svg, canvas { max-width: 100%; }
+</style>
+</head>
+<body>
+
+<style>
+/* ============================================================
+   TOKENS — complete light palette on bare :root
+   ============================================================ */
+:root {
+  color-scheme: light;
+
+  /* corners — the only two categorical hues on the page */
+  --corner-a:      #2a78d6;   /* blue corner  */
+  --corner-b:      #e34948;   /* red corner   */
+  --corner-a-soft: rgba(42,120,214,0.12);
+  --corner-b-soft: rgba(227,73,72,0.12);
+  --corner-a-mid:  rgba(42,120,214,0.34);
+  --corner-b-mid:  rgba(227,73,72,0.34);
+  --corner-a-deep: #1c5cab;
+  --corner-b-deep: #a82b2a;
+
+  /* grounds — neutrals biased cool, toward the blue corner */
+  --canvas:    #f1f3f6;
+  --surface:   #fbfbfc;
+  --surface-2: #f6f7f9;
+  --ring:      rgba(14,18,27,0.10);
+  --ring-firm: rgba(14,18,27,0.18);
+
+  /* ink */
+  --ink:       #0e121b;
+  --ink-2:     #4d5566;
+  --muted:     #6f7784;
+  --grid:      #e3e6eb;
+  --axis:      #c4c9d2;
+
+  /* status — reserved, never used for a series */
+  --good:      #0ca30c;
+  --warning:   #fab219;
+  --critical:  #d03b3b;
+
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  --measure: 68ch;
+  --wide: 1120px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --corner-a:      #3987e5;
+    --corner-b:      #e66767;
+    --corner-a-soft: rgba(57,135,229,0.16);
+    --corner-b-soft: rgba(230,103,103,0.16);
+    --corner-a-mid:  rgba(57,135,229,0.40);
+    --corner-b-mid:  rgba(230,103,103,0.40);
+    --corner-a-deep: #8fbdf4;
+    --corner-b-deep: #f0a0a0;
+
+    --canvas:    #0c0e11;
+    --surface:   #15181d;
+    --surface-2: #1b1f26;
+    --ring:      rgba(255,255,255,0.10);
+    --ring-firm: rgba(255,255,255,0.20);
+
+    --ink:       #eef1f6;
+    --ink-2:     #b3bac7;
+    --muted:     #8b93a1;
+    --grid:      #262b33;
+    --axis:      #39404b;
+
+    --good:      #0ca30c;
+    --warning:   #fab219;
+    --critical:  #e05c5c;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --corner-a:      #3987e5;
+  --corner-b:      #e66767;
+  --corner-a-soft: rgba(57,135,229,0.16);
+  --corner-b-soft: rgba(230,103,103,0.16);
+  --corner-a-mid:  rgba(57,135,229,0.40);
+  --corner-b-mid:  rgba(230,103,103,0.40);
+  --corner-a-deep: #8fbdf4;
+  --corner-b-deep: #f0a0a0;
+
+  --canvas:    #0c0e11;
+  --surface:   #15181d;
+  --surface-2: #1b1f26;
+  --ring:      rgba(255,255,255,0.10);
+  --ring-firm: rgba(255,255,255,0.20);
+
+  --ink:       #eef1f6;
+  --ink-2:     #b3bac7;
+  --muted:     #8b93a1;
+  --grid:      #262b33;
+  --axis:      #39404b;
+
+  --good:      #0ca30c;
+  --warning:   #fab219;
+  --critical:  #e05c5c;
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16.5px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: var(--wide);
+  margin: 0 auto;
+  padding: 0 24px 96px;
+}
+
+/* text column sits inside the wide wrapper; charts break out */
+.col {
+  max-width: var(--measure);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.col > * { margin: 0; }
+
+h1, h2, h3, h4 { margin: 0; text-wrap: balance; font-weight: 800; letter-spacing: -0.022em; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+
+p { margin: 0; color: var(--ink-2); }
+p strong, li strong { color: var(--ink); font-weight: 650; }
+a { color: var(--corner-a); }
+
+code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+:focus-visible { outline: 2px solid var(--corner-a); outline-offset: 3px; border-radius: 3px; }
+
+/* ============================================================
+   MASTHEAD
+   ============================================================ */
+.masthead {
+  border-bottom: 1px solid var(--ring);
+  background: var(--surface);
+  padding: 56px 0 40px;
+  margin-bottom: 44px;
+}
+.masthead .col { gap: 22px; }
+
+.corner-rule {
+  display: flex; height: 4px; width: 100%; border-radius: 2px; overflow: hidden;
+}
+.corner-rule i { flex: 1; }
+.corner-rule i:first-child { background: var(--corner-a); }
+.corner-rule i:last-child  { background: var(--corner-b); }
+
+h1 { font-size: clamp(34px, 6vw, 58px); line-height: 1.02; letter-spacing: -0.038em; }
+.standfirst { font-size: 19px; line-height: 1.55; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn {
+  font-family: var(--mono); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-2); background: var(--surface-2);
+  border: 1px solid var(--ring-firm); border-radius: 999px;
+  padding: 8px 16px; cursor: pointer;
+}
+.btn:hover { color: var(--ink); border-color: var(--muted); }
+.btn[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+/* ============================================================
+   SECTIONS
+   ============================================================ */
+section { margin-top: 84px; }
+.sec-hd { max-width: var(--measure); margin-inline: auto; display: flex; flex-direction: column; gap: 12px; margin-bottom: 30px; }
+.sec-hd h2 { font-size: clamp(25px, 3.4vw, 34px); line-height: 1.12; }
+.sec-hd .lede { font-size: 17.5px; }
+
+/* ============================================================
+   CALLOUT — the one flourish, used twice
+   ============================================================ */
+.callout {
+  border: 1px solid var(--ring-firm);
+  border-left: 3px solid var(--corner-a);
+  background: var(--surface);
+  border-radius: 4px;
+  padding: 22px 26px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.callout .eyebrow { color: var(--corner-a-deep); }
+.callout .rule-text {
+  font-size: 19px; font-weight: 650; color: var(--ink);
+  letter-spacing: -0.015em; line-height: 1.4;
+}
+
+/* ============================================================
+   CARDS
+   ============================================================ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  border-radius: 6px;
+  padding: 24px 26px 20px;
+  margin: 0 0 22px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.card-hd { display: flex; flex-direction: column; gap: 7px; }
+.card-hd h3 { font-size: 21px; line-height: 1.2; }
+.card-hd .reads { font-size: 15.5px; line-height: 1.5; max-width: 74ch; }
+
+/* min() is load-bearing: a bare minmax(410px,…) floor cannot shrink below 410px
+   and forces the whole page to scroll sideways on a phone. */
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(410px, 100%), 1fr)); gap: 22px; align-items: start; }
+.grid-2 .card { margin: 0; height: 100%; }
+
+.chartbox { width: 100%; overflow-x: auto; }
+.chartbox svg { display: block; width: 100%; height: auto; }
+
+/* legend — always present for 2 series */
+.legend { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
+.lg { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.lg .key { width: 22px; height: 3px; border-radius: 2px; flex: none; }
+.lg .key.sq { width: 12px; height: 12px; border-radius: 3px; }
+.lg .key.a { background: var(--corner-a); }
+.lg .key.b { background: var(--corner-b); }
+.lg .key.hollow-a { background: var(--corner-a-mid); }
+.lg .key.hollow-b { background: var(--corner-b-mid); }
+.lg .key.guard { background: var(--muted); }
+
+/* requires chips — the structural device tying charts to schema */
+.requires {
+  display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
+  padding-top: 14px; border-top: 1px solid var(--grid); margin: 0;
+}
+.requires > span {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+  margin-right: 2px;
+}
+.requires code {
+  font-size: 11.5px; color: var(--ink-2);
+  background: var(--surface-2); border: 1px solid var(--ring);
+  border-radius: 3px; padding: 2px 7px;
+}
+
+/* table views */
+.datatable { display: none; }
+:root.show-tables .datatable { display: block; overflow-x: auto; }
+.datatable table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.datatable caption {
+  text-align: left; font-family: var(--mono); font-size: 10.5px;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+  padding-bottom: 8px;
+}
+.datatable th, .datatable td {
+  text-align: right; padding: 5px 12px 5px 0;
+  border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums;
+  font-family: var(--mono); color: var(--ink-2); white-space: nowrap;
+}
+.datatable th { color: var(--muted); font-weight: 600; }
+.datatable th:first-child, .datatable td:first-child { text-align: left; font-family: var(--sans); }
+
+/* ============================================================
+   KPI TILES
+   ============================================================ */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(168px, 100%), 1fr)); gap: 12px; }
+.kpi {
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 6px;
+  padding: 16px 18px 15px; display: flex; flex-direction: column; gap: 3px;
+}
+.kpi .k-label { font-size: 12.5px; color: var(--muted); line-height: 1.3; }
+.kpi .k-val { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; color: var(--ink); line-height: 1.1; }
+.kpi .k-val .unit { font-size: 15px; font-weight: 600; color: var(--ink-2); letter-spacing: 0; }
+.kpi .k-sub { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.kpi .k-sub.dn { color: var(--critical); }
+.kpi.hero-tile { grid-column: span 2; }
+.kpi.hero-tile .k-val { font-size: 46px; }
+
+.tile-corner { display: inline-flex; align-items: center; gap: 7px; }
+.tile-corner i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.tile-corner i.a { background: var(--corner-a); }
+.tile-corner i.b { background: var(--corner-b); }
+
+/* ============================================================
+   HUD MOCK
+   ============================================================ */
+.hud {
+  position: relative; border-radius: 8px; overflow: hidden;
+  background: #0a0c10; border: 1px solid var(--ring-firm);
+  aspect-ratio: 16 / 9; min-height: 300px;
+  container-type: inline-size;
+}
+.hud-feeds { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.hud-feed { position: relative; overflow: hidden; }
+.hud-feed canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.hud-feed.exposed::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  box-shadow: inset 0 0 60px 14px rgba(208,59,59,0.55);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity: 0.45; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .hud-feed.exposed::after { animation: none; opacity: 0.8; } }
+
+.hud-top { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 14px; padding: 3.2%; align-items: flex-start; }
+.hb { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.hb.right { align-items: flex-end; }
+.hb-name {
+  font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: rgba(255,255,255,0.92);
+  display: flex; align-items: center; gap: 7px;
+}
+.hb-track { width: 100%; height: 9px; border-radius: 5px; background: rgba(255,255,255,0.15); overflow: hidden; display: flex; }
+.hb.right .hb-track { justify-content: flex-end; }
+.hb-fill { height: 100%; border-radius: 5px; }
+.hb-fill.a { background: var(--corner-a); }
+.hb-fill.b { background: var(--corner-b); }
+.hb-num { font-family: var(--mono); font-size: 11px; color: rgba(255,255,255,0.62); }
+
+.hud-timer {
+  position: absolute; top: 3.2%; left: 50%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 15px; font-weight: 700;
+  color: #fff; letter-spacing: 0.06em; text-align: center;
+}
+.hud-timer small { display: block; font-size: 9px; letter-spacing: 0.18em; color: rgba(255,255,255,0.5); font-weight: 600; }
+
+.speed-flash {
+  position: absolute; left: 25%; top: 46%; transform: translate(-50%,-50%);
+  text-align: center; color: #fff; pointer-events: none;
+}
+.speed-flash .n { font-size: 44px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; text-shadow: 0 2px 18px rgba(0,0,0,0.6); }
+.speed-flash .u { font-family: var(--mono); font-size: 10px; letter-spacing: 0.22em; color: rgba(255,255,255,0.8); }
+
+.combo {
+  position: absolute; left: 3.2%; bottom: 4%;
+  font-family: var(--mono); color: #fff;
+}
+.combo .n { font-size: 27px; font-weight: 800; letter-spacing: -0.02em; }
+.combo .l { font-size: 9.5px; letter-spacing: 0.2em; color: rgba(255,255,255,0.62); }
+
+/* Every self-indicator lives on the viewer's own half — this is Andrew's screen. */
+.stamina { position: absolute; left: 13%; bottom: 3.2%; width: 64px; height: 64px; }
+.exposed-tag {
+  position: absolute; left: 26%; bottom: 5.5%;
+  font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.18em;
+  color: #fff; background: var(--critical); padding: 5px 12px; border-radius: 3px;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .stamina { width: 46px; height: 46px; left: 15%; }
+  .exposed-tag { font-size: 8px; letter-spacing: 0.1em; padding: 4px 7px; left: 28%; }
+  .combo .n { font-size: 19px; }
+  .speed-flash .n { font-size: 28px; }
+}
+
+.hud-notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 14px; margin-top: 20px; }
+.hud-note { display: flex; flex-direction: column; gap: 3px; }
+.hud-note h4 { font-size: 14.5px; }
+.hud-note p { font-size: 13.5px; line-height: 1.45; }
+
+/* ============================================================
+   ARCHETYPE
+   ============================================================ */
+.arch { display: flex; flex-direction: column; gap: 14px; }
+.arch-name {
+  font-size: clamp(26px, 3.6vw, 38px); font-weight: 800; letter-spacing: -0.035em;
+  line-height: 1.05; color: var(--ink);
+}
+.arch-name .corner-dot { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--corner-a); margin-right: 10px; vertical-align: 0.06em; }
+.arch-why { display: flex; flex-direction: column; gap: 7px; }
+.arch-why div { display: flex; gap: 11px; align-items: baseline; font-size: 13.5px; color: var(--ink-2); }
+.arch-why b { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); min-width: 88px; font-weight: 600; }
+
+/* record strip */
+.record { display: flex; flex-direction: column; gap: 9px; }
+.record-ticks { display: flex; gap: 4px; }
+.record-ticks i {
+  width: 100%; max-width: 34px; height: 30px; border-radius: 3px; flex: 1;
+  display: grid; place-items: center;
+  font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--surface);
+  font-style: normal;
+}
+.record-ticks i.w { background: var(--corner-a); }
+.record-ticks i.l { background: var(--axis); color: var(--ink-2); }
+
+/* percentile rows */
+.pct { display: flex; flex-direction: column; gap: 13px; }
+.pct-row { display: grid; grid-template-columns: 108px 1fr 46px; gap: 12px; align-items: center; }
+.pct-row .lab { font-size: 13px; color: var(--ink-2); }
+.pct-track { height: 10px; border-radius: 5px; background: var(--corner-a-soft); overflow: hidden; }
+.pct-fill { height: 100%; border-radius: 5px; background: var(--corner-a); }
+.pct-fill.low { background: var(--axis); }
+.pct-row .num { font-family: var(--mono); font-size: 12.5px; text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   SIGNAL LADDER — ordered because the data genuinely is
+   ============================================================ */
+.ladder { display: flex; flex-direction: column; gap: 0; }
+.rung {
+  display: grid; grid-template-columns: 132px 1fr; gap: 22px;
+  padding: 18px 0; border-top: 1px solid var(--grid);
+}
+.rung:last-child { border-bottom: 1px solid var(--grid); }
+.rung .tier { display: flex; flex-direction: column; gap: 2px; }
+.rung .tier b { font-size: 14.5px; color: var(--ink); font-weight: 700; }
+.rung .tier span { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.rung .fields { display: flex; flex-wrap: wrap; gap: 7px; align-items: flex-start; }
+.rung .fields code {
+  font-size: 12px; color: var(--ink-2); background: var(--surface);
+  border: 1px solid var(--ring); border-radius: 3px; padding: 3px 8px;
+}
+
+/* ============================================================
+   SCHEMA
+   ============================================================ */
+pre {
+  margin: 0; overflow-x: auto; background: var(--surface);
+  border: 1px solid var(--ring); border-radius: 6px; padding: 20px 22px;
+  font-family: var(--mono); font-size: 13px; line-height: 1.65; color: var(--ink-2);
+  tab-size: 2;
+}
+pre .c { color: var(--muted); font-style: italic; }
+pre .k { color: var(--corner-a-deep); font-weight: 600; }
+pre .n { color: var(--ink); }
+
+.tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(310px, 100%), 1fr)); gap: 20px; }
+.tier-card { background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 22px 24px; display: flex; flex-direction: column; gap: 12px; }
+.tier-card.hot { border-top: 3px solid var(--corner-b); }
+.tier-card.cold { border-top: 3px solid var(--corner-a); }
+.tier-card h4 { font-size: 17px; }
+.tier-card p { font-size: 14px; line-height: 1.5; }
+.tier-card ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.tier-card li { font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+.tier-card .stamp { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+
+ul.plain { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 9px; }
+ul.plain li { color: var(--ink-2); }
+
+/* ============================================================
+   TOOLTIP
+   ============================================================ */
+#tip {
+  position: fixed; z-index: 90; pointer-events: none; opacity: 0;
+  transition: opacity 90ms linear;
+  background: var(--surface); border: 1px solid var(--ring-firm);
+  border-radius: 5px; padding: 9px 12px;
+  box-shadow: 0 6px 22px rgba(0,0,0,0.14);
+  font-size: 13px; max-width: 260px;
+}
+#tip.on { opacity: 1; }
+#tip .t-hd { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+#tip .t-row { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+#tip .t-row + .t-row { margin-top: 3px; }
+#tip .t-key { width: 14px; height: 3px; border-radius: 2px; flex: none; }
+#tip .t-val { font-family: var(--mono); font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+#tip .t-lab { color: var(--ink-2); font-size: 12px; }
+
+svg .hit { fill: transparent; cursor: crosshair; }
+svg .mark-lift { opacity: 0; }
+
+@media (max-width: 620px) {
+  .rung { grid-template-columns: 1fr; gap: 10px; }
+  .kpi.hero-tile { grid-column: span 1; }
+  .pct-row { grid-template-columns: 92px 1fr 42px; }
+  .hud { aspect-ratio: 4 / 3; }
+}
+</style>
+
+<div class="masthead">
+  <div class="wrap">
+    <div class="col">
+      <div class="corner-rule"><i></i><i></i></div>
+      <p class="eyebrow">Boxmegle · fight telemetry</p>
+      <h1>What the fight data can tell us.</h1>
+      <p class="standfirst">
+        A catalog of every visualization worth building from a Boxmegle match — and,
+        because <code>packages/game-mechanics</code> is still a stub, a specification
+        of the event log that has to exist underneath them. Every chart on this page is
+        rendered against one synthetic 90-second fight, so the numbers agree with each
+        other the way real ones would.
+      </p>
+      <div class="controls">
+        <button class="btn" id="tableToggle" aria-pressed="false">Show data tables</button>
+        <span class="eyebrow" style="letter-spacing:0.1em">Synthetic fight · deterministic seed 509</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- ======================================================
+       THE CONSTRAINT
+       ====================================================== -->
+  <section id="constraint" style="margin-top:0">
+    <div class="sec-hd">
+      <p class="eyebrow">The constraint</p>
+      <h2>Speed and timing only. No punch classifier.</h2>
+      <p class="lede">
+        Everything here derives from four measurements: wrist velocity, when a punch
+        happened, which hand threw it, and how high the guard was. No jab/cross/hook/uppercut
+        typing, no target detection. That constraint is what makes this buildable in a
+        hackathon — and it turns out to cost far less than you'd expect.
+      </p>
+    </div>
+
+    <div class="col">
+      <div class="callout">
+        <p class="eyebrow">The rule that unlocks everything</p>
+        <p class="rule-text">
+          A punch <em>lands</em> if the opponent's guard was down at that timestamp.
+          Damage is a function of peak wrist speed.
+        </p>
+        <p>
+          Both clients already stream guard height over <code>/game_session</code>, so
+          hit detection needs no classifier and no shared coordinate space — which is
+          just as well, since the two fighters are on separate webcams and share no
+          physical geometry at all. This single rule yields accuracy, damage, health
+          curves and momentum: the entire narrative spine of the summary page. It also
+          promotes guard from a cosmetic readout to a real mechanic, and it's symmetric,
+          so neither player can exploit it.
+        </p>
+      </div>
+
+      <div class="callout" style="border-left-color:var(--corner-b)">
+        <p class="eyebrow" style="color:var(--corner-b-deep)">Prerequisite · non-negotiable</p>
+        <p class="rule-text">Normalize every distance by shoulder width, per frame.</p>
+        <p>
+          Without it, a player who sits closer to their webcam punches harder forever,
+          and every number on this page becomes a measure of desk depth. Store speeds in
+          shoulder-widths per second; convert to mph only for display, because
+          <span style="color:var(--ink);font-weight:600">"31 mph"</span> lands and
+          <span style="color:var(--ink);font-weight:600">"4.2 sw/s"</span> does not.
+        </p>
+      </div>
+
+      <div class="callout" style="border-left-color:var(--warning)">
+        <p class="eyebrow" style="color:var(--ink-2)">Known limitation · found while building these charts</p>
+        <p class="rule-text">A binary guard rule makes your accuracy a measurement of your opponent, not of you.</p>
+        <p>
+          If <code>landed</code> is exactly "their guard was down", then 100% of the punches
+          you absorb arrived while you were exposed — <em>by construction</em>. Any chart
+          claiming that as an insight is quoting its own definition back at you, and
+          accuracy stops being a skill stat: throw with your eyes closed and you'll score
+          the same. The fix is small. Make <code>guard</code> continuous, which it already
+          is, and scale damage by <code>peakSpeed × (1 − opponentGuard)</code> — then your
+          speed still matters against a high guard, chip damage exists, and accuracy
+          becomes a real distribution instead of a coin weighted by someone else.
+          The charts on this page work either way; this one is a gameplay decision, not a
+          visualization one.
+        </p>
+      </div>
+    </div>
+
+    <div style="max-width:var(--measure);margin:38px auto 0">
+      <p class="eyebrow" style="margin-bottom:14px">The signal ladder</p>
+      <div class="ladder">
+        <div class="rung">
+          <div class="tier"><b>Per frame</b><span>~30 Hz</span></div>
+          <div class="fields">
+            <code>wristVel.L</code><code>wristVel.R</code><code>guard</code>
+            <code>hip.xy</code><code>shoulderWidth</code>
+          </div>
+        </div>
+        <div class="rung">
+          <div class="tier"><b>Per punch</b><span>event</span></div>
+          <div class="fields">
+            <code>t</code><code>hand</code><code>peakSpeed</code>
+            <code>extension</code><code>retractMs</code><code>landed</code>
+          </div>
+        </div>
+        <div class="rung">
+          <div class="tier"><b>Per window</b><span>10 s</span></div>
+          <div class="fields">
+            <code>cadence</code><code>guardUptime</code><code>exposureWindows</code><code>distanceMoved</code>
+          </div>
+        </div>
+        <div class="rung">
+          <div class="tier"><b>Per match</b><span>aggregate</span></div>
+          <div class="fields">
+            <code>accuracy</code><code>topSpeed</code><code>fatigueSlope</code>
+            <code>burstLengths</code><code>responseLatency</code><code>damageDealt</code>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:14.5px;margin-top:16px">
+        Combos come free at the third rung: punches inside a 600 ms gap are one burst.
+        No punch typing required to count them.
+      </p>
+    </div>
+  </section>
+
+  <!-- ======================================================
+       SUMMARY PAGE
+       ====================================================== -->
+  <section id="summary">
+    <div class="sec-hd">
+      <p class="eyebrow">Surface 01 · post-fight</p>
+      <h2>The summary page</h2>
+      <p class="lede">
+        The richest surface: the whole event log is already client-side, there's no
+        latency budget, and the player is finally sitting still. This is where the fight
+        gets explained back to them.
+      </p>
+    </div>
+
+    <div id="kpiRow" class="kpis" style="margin-bottom:22px"></div>
+
+    <!-- HERO: fight tape -->
+    <figure class="card">
+      <div class="card-hd">
+        <h3>Fight tape</h3>
+        <p class="reads">
+          The hero chart — the whole fight in one image. Each stem is a punch, its height
+          the peak wrist speed; filled stems landed, ghosted stems hit guard. The grey
+          strips mark the seconds each fighter's guard was down. Clicking a stem is the
+          scrub handle for the 3D replay.
+        </p>
+      </div>
+      <div class="chartbox" id="c-tape"></div>
+      <div class="legend">
+        <span class="lg"><i class="key a"></i>Andrew · blue corner</span>
+        <span class="lg"><i class="key b"></i>Kai · red corner</span>
+        <span class="lg"><i class="key sq hollow-a"></i>Blocked (guard up)</span>
+        <span class="lg"><i class="key sq guard"></i>Guard down — exposed</span>
+      </div>
+      <div class="datatable" id="t-tape"></div>
+      <figcaption class="requires">
+        <span>requires</span>
+        <code>punch.t</code><code>punch.peakSpeed</code><code>punch.landed</code><code>frame.guard</code>
+      </figcaption>
+    </figure>
+
+    <!-- momentum, same x-axis -->
+    <figure class="card">
+      <div class="card-hd">
+        <h3>Momentum</h3>
+        <p class="reads">
+          Health differential over the same time axis as the tape above — read them
+          together. Andrew leads for 68 of the 90 seconds and still loses: a 47-point lead
+          disappears in the last twenty, because that is exactly when his guard does.
+        </p>
+      </div>
+      <div class="chartbox" id="c-momentum"></div>
+      <div class="legend">
+        <span class="lg"><i class="key sq hollow-a"></i>Andrew ahead</span>
+        <span class="lg"><i class="key sq hollow-b"></i>Kai ahead</span>
+      </div>
+      <div class="datatable" id="t-momentum"></div>
+      <figcaption class="requires">
+        <span>requires</span>
+        <code>punch.landed</code><code>punch.peakSpeed</code><code>damageModel()</code>
+      </figcaption>
+    </figure>
+
+    <div class="grid-2">
+      <figure class="card">
+        <div class="card-hd">
+          <h3>Output cadence</h3>
+          <p class="reads">Punches thrown per 10-second window. Andrew opens at more than double Kai's rate; by the final window Kai is throwing nearly four times as much.</p>
+        </div>
+        <div class="chartbox" id="c-cadence"></div>
+        <div class="legend">
+          <span class="lg"><i class="key a"></i>Andrew</span>
+          <span class="lg"><i class="key b"></i>Kai</span>
+        </div>
+        <div class="datatable" id="t-cadence"></div>
+        <figcaption class="requires"><span>requires</span><code>punch.t</code></figcaption>
+      </figure>
+
+      <figure class="card">
+        <div class="card-hd">
+          <h3>Fatigue</h3>
+          <p class="reads">Every punch as a dot, with a rolling mean through it. The trend line is the sentence the player actually remembers.</p>
+        </div>
+        <div class="chartbox" id="c-fatigue"></div>
+        <div class="legend">
+          <span class="lg"><i class="key a"></i>Andrew</span>
+          <span class="lg"><i class="key b"></i>Kai</span>
+        </div>
+        <div class="datatable" id="t-fatigue"></div>
+        <figcaption class="requires"><span>requires</span><code>punch.t</code><code>punch.peakSpeed</code></figcaption>
+      </figure>
+
+      <figure class="card">
+        <div class="card-hd">
+          <h3>Punch speed distribution</h3>
+          <p class="reads">Both fighters' speed histograms back to back. Andrew's spreads wider and reaches higher; Kai's is tight and repeatable.</p>
+        </div>
+        <div class="chartbox" id="c-speeddist"></div>
+        <div class="legend">
+          <span class="lg"><i class="key sq a"></i>Andrew</span>
+          <span class="lg"><i class="key sq b"></i>Kai</span>
+        </div>
+        <div class="datatable" id="t-speeddist"></div>
+        <figcaption class="requires"><span>requires</span><code>punch.peakSpeed</code></figcaption>
+      </figure>
+
+      <figure class="card">
+        <div class="card-hd">
+          <h3>Guard exposure</h3>
+          <p class="reads">The share of the fight each fighter spent covered — and the stat that explains the result.</p>
+        </div>
+        <div class="chartbox" id="c-guard"></div>
+        <div id="guardVerdict" class="callout" style="border-left-color:var(--corner-b);padding:16px 18px"></div>
+        <div class="datatable" id="t-guard"></div>
+        <figcaption class="requires"><span>requires</span><code>frame.guard</code><code>punch.t</code><code>punch.landed</code></figcaption>
+      </figure>
+
+      <figure class="card">
+        <div class="card-hd">
+          <h3>Burst lengths</h3>
+          <p class="reads">Punches inside a 600 ms gap group into one burst. Combos without a classifier — pure timing.</p>
+        </div>
+        <div class="chartbox" id="c-bursts"></div>
+        <div class="legend">
+          <span class="lg"><i class="key sq a"></i>Andrew</span>
+          <span class="lg"><i class="key sq b"></i>Kai</span>
+        </div>
+        <div class="datatable" id="t-bursts"></div>
+        <figcaption class="requires"><span>requires</span><code>punch.t</code></figcaption>
+      </figure>
+
+      <figure class="card">
+        <div class="card-hd">
+          <h3>Exchange rhythm</h3>
+          <p class="reads">How long after being hit each fighter fires back. Short bars on the left mean a fighter who answers immediately.</p>
+        </div>
+        <div class="chartbox" id="c-exchange"></div>
+        <div class="legend">
+          <span class="lg"><i class="key sq a"></i>Andrew</span>
+          <span class="lg"><i class="key sq b"></i>Kai</span>
+        </div>
+        <div class="datatable" id="t-exchange"></div>
+        <figcaption class="requires"><span>requires</span><code>punch.t</code><code>punch.landed</code></figcaption>
+      </figure>
+
+      <figure class="card">
+        <div class="card-hd">
+          <h3>Hand balance</h3>
+          <p class="reads">Left versus right, with average speed per hand. Two shades of one corner's hue — this is a split within a fighter, not two identities.</p>
+        </div>
+        <div class="chartbox" id="c-hands"></div>
+        <div class="datatable" id="t-hands"></div>
+        <figcaption class="requires"><span>requires</span><code>punch.hand</code><code>punch.peakSpeed</code></figcaption>
+      </figure>
+
+      <figure class="card">
+        <div class="card-hd">
+          <h3>Movement footprint</h3>
+          <p class="reads">The path of the hip midpoint across the fight, from above. Reveals the stationary target instantly.</p>
+        </div>
+        <div class="chartbox" id="c-footprint"></div>
+        <div class="legend">
+          <span class="lg"><i class="key a"></i>Andrew</span>
+          <span class="lg"><i class="key b"></i>Kai</span>
+        </div>
+        <div class="datatable" id="t-footprint"></div>
+        <figcaption class="requires"><span>requires</span><code>frame.hip.xy</code><code>frame.shoulderWidth</code></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ======================================================
+       HUD
+       ====================================================== -->
+  <section id="hud">
+    <div class="sec-hd">
+      <p class="eyebrow">Surface 02 · live</p>
+      <h2>The in-fight HUD</h2>
+      <p class="lede">
+        One rule governs this whole surface: <strong>no charts during the fight</strong>.
+        A fighter mid-exchange can read a bar and one big number in peripheral vision.
+        Anything else is decoration they will never look at.
+      </p>
+    </div>
+
+    <div class="hud" id="hudMock">
+      <div class="hud-feeds">
+        <div class="hud-feed exposed" id="feedWrapA"><canvas id="feedA"></canvas></div>
+        <div class="hud-feed" id="feedWrapB"><canvas id="feedB"></canvas></div>
+      </div>
+
+      <div class="hud-top">
+        <div class="hb">
+          <span class="hb-name"><i style="width:9px;height:9px;border-radius:2px;background:var(--corner-a);display:inline-block"></i>Andrew</span>
+          <span class="hb-track"><span class="hb-fill a" id="hbFillA"></span></span>
+          <span class="hb-num" id="hbNumA"></span>
+        </div>
+        <div class="hb right">
+          <span class="hb-name">Kai<i style="width:9px;height:9px;border-radius:2px;background:var(--corner-b);display:inline-block"></i></span>
+          <span class="hb-track"><span class="hb-fill b" id="hbFillB"></span></span>
+          <span class="hb-num" id="hbNumB"></span>
+        </div>
+      </div>
+
+      <div class="hud-timer"><span id="hudTimer"></span><small>round 1</small></div>
+
+      <div class="speed-flash">
+        <div class="n" id="flashN"></div>
+        <div class="u">mph</div>
+      </div>
+
+      <div class="combo">
+        <div class="n" id="comboN"></div>
+        <div class="l">burst</div>
+      </div>
+
+      <svg class="stamina" viewBox="0 0 68 68" id="staminaSvg">
+        <circle cx="34" cy="34" r="27" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="6"/>
+        <circle cx="34" cy="34" r="27" fill="none" stroke="#fab219" stroke-width="6"
+                stroke-linecap="round" id="staminaArc" transform="rotate(-90 34 34)"/>
+        <text x="34" y="38" text-anchor="middle" fill="#fff" font-size="15" font-weight="700"
+              font-family="system-ui, sans-serif" id="staminaTxt"></text>
+      </svg>
+
+      <div class="exposed-tag" id="exposedTag"></div>
+    </div>
+    <p style="font-size:13px;color:var(--muted);font-family:var(--mono);margin-top:10px">
+      Andrew's screen, frozen at <span id="hudStamp"></span> of the same fight — every value read from the event log
+    </p>
+
+    <div class="hud-notes" style="max-width:var(--wide)">
+      <div class="hud-note">
+        <h4>Health bars</h4>
+        <p>The only element that is genuinely non-negotiable. Corner-coloured, mirrored to each fighter's own side of the screen.</p>
+      </div>
+      <div class="hud-note">
+        <h4>Speed flash</h4>
+        <p>Peak mph over your own feed on impact, 400 ms fade. The single most satisfying number in the game — make it big.</p>
+      </div>
+      <div class="hud-note">
+        <h4>Burst counter</h4>
+        <p>Increments inside the 600 ms window, resets after 1.5 s of silence. Same computation as the burst chart, live.</p>
+      </div>
+      <div class="hud-note">
+        <h4>Stamina ring</h4>
+        <p>Depletes with output rate, regenerates when you pause. A real mechanic derived from cadence alone — it makes the fatigue curve something the player <em>chose</em>.</p>
+      </div>
+      <div class="hud-note">
+        <h4>Exposure vignette</h4>
+        <p>Red pulse at the frame edge after 1 s of guard down. Diegetic and preattentive — no UI chrome, readable without looking at it.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================================================
+       PROFILE
+       ====================================================== -->
+  <section id="profile">
+    <div class="sec-hd">
+      <p class="eyebrow">Surface 03 · persistent</p>
+      <h2>The fighter profile</h2>
+      <p class="lede">
+        What survives the match and accumulates in <code>users.record</code> and
+        <code>users.max_stats</code>. This is the surface that makes people come back,
+        and every axis of it is derivable from speed and timing.
+      </p>
+    </div>
+
+    <div class="grid-2">
+      <figure class="card">
+        <div class="card-hd">
+          <h3>Style fingerprint</h3>
+          <p class="reads">
+            Five axes, all conservative-tier. A radar earns its place here because it's an
+            identity shape, not a magnitude comparison — you're meant to recognise the
+            silhouette, not read the values off it.
+          </p>
+        </div>
+        <div class="chartbox" id="c-radar"></div>
+        <div class="legend">
+          <span class="lg"><i class="key a"></i>Andrew</span>
+          <span class="lg"><i class="key b"></i>Kai</span>
+        </div>
+        <div class="datatable" id="t-radar"></div>
+        <figcaption class="requires">
+          <span>requires</span>
+          <code>topSpeed</code><code>cadence</code><code>guardUptime</code><code>responseLatency</code><code>fatigueSlope</code>
+        </figcaption>
+      </figure>
+
+      <figure class="card">
+        <div class="card-hd">
+          <h3>Archetype</h3>
+          <p class="reads">Thresholded straight off the five axes. The most shareable thing the game produces — and it costs one function.</p>
+        </div>
+        <div class="arch">
+          <div class="arch-name"><span class="corner-dot"></span>Pressure&nbsp;Brawler</div>
+          <div class="arch-why" id="archWhy"></div>
+        </div>
+        <figcaption class="requires"><span>requires</span><code>MatchPlayerStats</code><code>poolPercentiles</code></figcaption>
+      </figure>
+
+      <figure class="card">
+        <div class="card-hd">
+          <h3>Personal best progression</h3>
+          <p class="reads">Top punch speed per match, with personal bests stepped. A single series, so no legend — the title already names it.</p>
+        </div>
+        <div class="chartbox" id="c-pb"></div>
+        <div class="datatable" id="t-pb"></div>
+        <figcaption class="requires"><span>requires</span><code>users.max_stats.topSpeed</code><code>completed_at</code></figcaption>
+      </figure>
+
+      <figure class="card">
+        <div class="card-hd">
+          <h3>Record &amp; standing</h3>
+          <p class="reads">
+            Results in order, because the streak is the information — a win-rate pie would
+            throw away the only part anyone cares about. Percentiles below, measured against
+            the whole player pool.
+          </p>
+        </div>
+        <div class="record">
+          <div class="record-ticks">
+            <i class="l">L</i><i class="w">W</i><i class="l">L</i><i class="w">W</i>
+            <i class="w">W</i><i class="l">L</i><i class="w">W</i><i class="w">W</i>
+          </div>
+          <p style="font-size:13px;color:var(--muted);font-family:var(--mono)">oldest → newest · 5–3 · won 3 of last 4</p>
+        </div>
+        <p class="eyebrow" style="margin-top:4px">Percentile vs every fighter in the pool</p>
+        <div class="pct" id="pctRows"></div>
+        <figcaption class="requires"><span>requires</span><code>users.record</code><code>completed_games.winner_uuid</code></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ======================================================
+       GLOBAL
+       ====================================================== -->
+  <section id="global">
+    <div class="sec-hd">
+      <p class="eyebrow">Surface 04 · meta</p>
+      <h2>The player pool</h2>
+      <p class="lede">
+        Nearly free once the hot-tier stats exist — these are single indexed queries, not
+        blob reads. Worth building because they're the only thing that gives a stranger's
+        match a scale to sit on.
+      </p>
+    </div>
+
+    <figure class="card">
+      <div class="card-hd">
+        <h3>Where you sit</h3>
+        <p class="reads">
+          Top punch speed across every fighter who has ever played, with the viewer marked.
+          This is the single most engaging cross-player visualization and it's one query —
+          emphasis, not categorical: one hue plus grey, because the story is one bar.
+        </p>
+      </div>
+      <div class="chartbox" id="c-pool"></div>
+      <div class="datatable" id="t-pool"></div>
+      <figcaption class="requires"><span>requires</span><code>match_player_stats.top_speed</code></figcaption>
+    </figure>
+
+    <figure class="card">
+      <div class="card-hd">
+        <h3>Hardest punches ever recorded</h3>
+        <p class="reads">A table, not a chart — eight near-identical numbers with names attached is exactly what a table is for. Each row links to its replay.</p>
+      </div>
+      <div id="leaderboard" style="overflow-x:auto"></div>
+      <figcaption class="requires"><span>requires</span><code>match_player_stats.top_speed</code><code>completed_games.replay_key</code></figcaption>
+    </figure>
+  </section>
+
+  <!-- ======================================================
+       SCHEMA
+       ====================================================== -->
+  <section id="schema">
+    <div class="sec-hd">
+      <p class="eyebrow">What it all demands</p>
+      <h2>The schema this implies</h2>
+      <p class="lede">
+        Every <code>requires</code> chip above is a claim about a field the fight loop has
+        to emit. Collected, they specify the event log — and they split cleanly into two
+        storage tiers with very different access patterns.
+      </p>
+    </div>
+
+    <div class="tiers" style="margin-bottom:26px">
+      <div class="tier-card hot">
+        <span class="stamp">Tier 1 · hot</span>
+        <h4>Postgres — queryable</h4>
+        <p>
+          Pre-aggregated per-player match stats. Powers the KPI tiles, the whole profile
+          surface, and every leaderboard <em>without</em> touching the replay blob.
+        </p>
+        <ul>
+          <li>Best as a <code>match_player_stats</code> table — two rows per fight — so leaderboards are indexable. A jsonb column on <code>completed_games</code> works but can't be indexed usefully.</li>
+          <li>Gives the currently-undefined <code>users.record</code> and <code>users.max_stats</code> a shape at last.</li>
+          <li>Roughly 400 bytes per fighter per fight.</li>
+        </ul>
+      </div>
+      <div class="tier-card cold">
+        <span class="stamp">Tier 2 · cold</span>
+        <h4>Supabase Storage — one blob</h4>
+        <p>
+          Full frame log plus punch events under the existing <code>replay_key</code>.
+          Fetched exactly once when the summary page mounts.
+        </p>
+        <ul>
+          <li>Powers the fight tape, the momentum ribbon, every time series, and the 3D reconstruction.</li>
+          <li>33 landmarks × 3 axes × 30 fps × 90 s ≈ <strong>1.4 MB</strong> as float32.</li>
+          <li>Quantize normalized coordinates to int16 → <strong>≈ 350 KB</strong>. Store as a packed typed array with a small JSON header, never as JSON numbers.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <pre><span class="c">// packages/game-mechanics/types.ts</span>
+<span class="c">// Cold tier — one entry per detected punch.</span>
+<span class="k">export type</span> <span class="n">PunchEvent</span> = {
+  t:          <span class="k">number</span>   <span class="c">// ms from fight start</span>
+  hand:       <span class="k">'L' | 'R'</span>
+  peakSpeed:  <span class="k">number</span>   <span class="c">// shoulder-widths / sec — NEVER pixels</span>
+  extension:  <span class="k">number</span>   <span class="c">// max wrist→shoulder distance, shoulder-widths</span>
+  retractMs:  <span class="k">number</span>   <span class="c">// time back to guard; low = tight technique</span>
+  landed:     <span class="k">boolean</span>  <span class="c">// opponent.guard &lt; threshold at t</span>
+}
+
+<span class="c">// Cold tier — one entry per captured frame, ~30 Hz.</span>
+<span class="k">export type</span> <span class="n">FrameSample</span> = {
+  t:             <span class="k">number</span>
+  lm:            <span class="k">Int16Array</span>  <span class="c">// 33 landmarks × 3, normalized then quantized</span>
+  guard:         <span class="k">number</span>      <span class="c">// 0..1, wrist_y vs shoulder_y</span>
+  shoulderWidth: <span class="k">number</span>      <span class="c">// px — the scale factor everything divides by</span>
+}
+
+<span class="c">// Hot tier — what lands in Postgres. One row per fighter per fight.</span>
+<span class="k">export type</span> <span class="n">MatchPlayerStats</span> = {
+  punchesThrown:   <span class="k">number</span>
+  punchesLanded:   <span class="k">number</span>
+  accuracy:        <span class="k">number</span>   <span class="c">// landed / thrown</span>
+  topSpeed:        <span class="k">number</span>
+  meanSpeed:       <span class="k">number</span>
+  damageDealt:     <span class="k">number</span>
+  guardUptime:     <span class="k">number</span>   <span class="c">// 0..1</span>
+  longestBurst:    <span class="k">number</span>
+  medianResponse:  <span class="k">number</span>   <span class="c">// ms</span>
+  fatigueSlope:    <span class="k">number</span>   <span class="c">// Δ mean speed, first third → last third</span>
+  distanceMoved:   <span class="k">number</span>   <span class="c">// shoulder-widths travelled</span>
+  handSplit:       { L: <span class="k">number</span>, R: <span class="k">number</span> }
+}</pre>
+
+      <div class="col" style="max-width:var(--measure);margin-top:8px">
+        <p class="eyebrow">Three things worth deciding early</p>
+        <ul class="plain">
+          <li><strong>Both clients must exchange guard state live.</strong> The landed rule needs the opponent's <code>guard</code> at punch time, so it belongs in the per-frame websocket payload — not reconciled afterwards. This is the one place the visualization catalog constrains the wire protocol.</li>
+          <li><strong>Compute <code>MatchPlayerStats</code> client-side, at fight end, on the host.</strong> The host is already elected by <code>/begin_fight</code>; it has both event logs; and it saves you a server that parses replay blobs.</li>
+          <li><strong>Version the blob.</strong> Put a <code>{ v: 1, fps, landmarkSet }</code> header on the replay payload. Landmark sets and frame rates will change, and a replay that can't say which one it used is unreadable a month later.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ============================================================
+     SEEDED SYNTHETIC FIGHT
+     One dataset. Every chart reads from it, so the numbers agree.
+     ============================================================ */
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var R = mulberry32(509);
+  function noise() { return (R() + R() + R() - 1.5) * 1.15; }
+
+  var DUR = 90;                       // seconds
+  var MAXMPH = 36;                    // chart ceiling
+
+  // Bursts are the generative primitive, not individual punches — that is how
+  // boxing actually arrives, and it makes burst length a real distribution.
+  var P = [
+    { key: "a", name: "Andrew", cls: "a",
+      // exposure BACK-loaded: starts tight, collapses in the last third
+      down: [[11,14],[26,29],[38,41],[47,53],[56,64],[66,74],[76,86]],
+      br0: 0.46, br1: 0.13,           // bursts/sec, start -> end
+      bs0: 2.9,  bs1: 1.2,            // mean burst length (combos shorten as he tires)
+      spd0: 30.4, spd1: 24.2 },       // mean mph, start -> end (fades)
+    { key: "b", name: "Kai", cls: "b",
+      // exposure FRONT-loaded: sloppy opening, tightens up and stays tight
+      down: [[2,6],[9,13],[16,20],[24,28],[33,36],[42,44],[68,70]],
+      br0: 0.20, br1: 0.46,
+      bs0: 1.5,  bs1: 2.4,
+      spd0: 24.8, spd1: 26.8 }
+  ];
+
+  function lerp(a, b, u) { return a + (b - a) * u; }
+  function guardDown(p, t) {
+    for (var i = 0; i < p.down.length; i++)
+      if (t >= p.down[i][0] && t < p.down[i][1]) return true;
+    return false;
+  }
+  function uptime(p) {
+    var d = 0;
+    for (var i = 0; i < p.down.length; i++) d += p.down[i][1] - p.down[i][0];
+    return 1 - d / DUR;
+  }
+
+  // --- generate punches, burst by burst ---------------------------------
+  P.forEach(function (p, pi) {
+    var punches = [], t = 0.5 + R() * 1.0;
+    while (t < DUR) {
+      var u = t / DUR;
+      var size = Math.max(1, Math.min(5,
+        Math.round(lerp(p.bs0, p.bs1, u) + (R() + R() - 1) * 1.1)));
+      for (var k = 0; k < size && t < DUR; k++) {
+        var uu = t / DUR;
+        // later punches in a burst land a little softer
+        var mph = Math.max(11, lerp(p.spd0, p.spd1, uu) + noise() * 3.3 - k * 0.9);
+        punches.push({
+          t: t,
+          hand: k % 2 === 0 ? (R() < (pi === 0 ? 0.62 : 0.5) ? "R" : "L") : (R() < 0.5 ? "L" : "R"),
+          mph: mph
+        });
+        t += 0.24 + R() * 0.28;       // inside a burst: under the 600 ms threshold
+      }
+      t += Math.max(0.55, -Math.log(1 - R()) / lerp(p.br0, p.br1, u));
+    }
+    // guarantee the record punch belongs to the fighter who loses
+    var best = punches.reduce(function (m, x) { return x.mph > m.mph ? x : m; }, punches[0]);
+    if (pi === 0) { best.mph = 34.2; p.record = best; }
+    p.punches = punches;
+  });
+
+  // --- resolve landed against the OPPONENT's guard ----------------------
+  P.forEach(function (p, pi) {
+    var opp = P[1 - pi];
+    p.punches.forEach(function (pu) { pu.landed = guardDown(opp, pu.t); });
+  });
+
+  // --- damage + health timeline ----------------------------------------
+  function dmg(mph) { return (mph / 34.2) * 4.15; }
+  P.forEach(function (p) {
+    p.dealt = p.punches.reduce(function (s, x) { return s + (x.landed ? dmg(x.mph) : 0); }, 0);
+  });
+  var STEP = 0.5, series = [];
+  (function () {
+    var hp = [100, 100];
+    for (var t = 0; t <= DUR + 1e-9; t += STEP) {
+      for (var pi = 0; pi < 2; pi++) {
+        P[pi].punches.forEach(function (pu) {
+          if (pu.landed && pu.t > t - STEP && pu.t <= t) hp[1 - pi] = Math.max(0, hp[1 - pi] - dmg(pu.mph));
+        });
+      }
+      series.push({ t: t, a: hp[0], b: hp[1], d: hp[0] - hp[1] });
+    }
+  })();
+  var finalA = series[series.length - 1].a, finalB = series[series.length - 1].b;
+  var winner = finalA > finalB ? P[0] : P[1];
+  var crossover = (function () {
+    for (var i = 1; i < series.length; i++)
+      if (series[i - 1].d > 0 && series[i].d <= 0) return series[i].t;
+    return null;
+  })();
+
+  // --- derived aggregates ----------------------------------------------
+  P.forEach(function (p) {
+    var n = p.punches.length;
+    p.thrown = n;
+    p.landedN = p.punches.filter(function (x) { return x.landed; }).length;
+    p.acc = p.landedN / n;
+    p.top = Math.max.apply(null, p.punches.map(function (x) { return x.mph; }));
+    p.mean = p.punches.reduce(function (s, x) { return s + x.mph; }, 0) / n;
+    p.uptime = uptime(p);
+
+    // fatigue: mean speed first third vs last third
+    var f = p.punches.filter(function (x) { return x.t < 30; });
+    var l = p.punches.filter(function (x) { return x.t >= 60; });
+    var mf = f.reduce(function (s, x) { return s + x.mph; }, 0) / f.length;
+    var ml = l.reduce(function (s, x) { return s + x.mph; }, 0) / l.length;
+    p.fatigue = (ml - mf) / mf;
+
+    // bursts: <=600ms gap
+    var bursts = [], cur = 1;
+    for (var i = 1; i < n; i++) {
+      if (p.punches[i].t - p.punches[i - 1].t <= 0.6) cur++;
+      else { bursts.push(cur); cur = 1; }
+    }
+    bursts.push(cur);
+    p.bursts = bursts;
+    p.longestBurst = Math.max.apply(null, bursts);
+
+    // hand split
+    p.hands = ["L", "R"].map(function (h) {
+      var s = p.punches.filter(function (x) { return x.hand === h; });
+      return { hand: h, n: s.length, mean: s.reduce(function (a, x) { return a + x.mph; }, 0) / s.length };
+    });
+  });
+
+  // response latency: time from being hit to your next punch
+  P.forEach(function (p, pi) {
+    var incoming = P[1 - pi].punches.filter(function (x) { return x.landed; }).map(function (x) { return x.t; });
+    var lat = [];
+    incoming.forEach(function (ht) {
+      var next = p.punches.find(function (x) { return x.t > ht; });
+      if (next && next.t - ht <= 3) lat.push(next.t - ht);
+    });
+    p.lat = lat;
+    p.medianLat = lat.slice().sort(function (x, y) { return x - y; })[Math.floor(lat.length / 2)] || 0;
+  });
+
+  // exposure accounting. NOTE: "how many hits arrived while exposed" is 100% by
+  // construction — landed IS defined as opponent-guard-down — so the interesting
+  // number is not how much, but WHEN.
+  var SPLIT = 45;
+  P.forEach(function (p, pi) {
+    var opp = P[1 - pi];
+    p.eaten = opp.punches.filter(function (x) { return x.landed; }).length;
+    p.exposedSec = p.down.reduce(function (s, w) { return s + (w[1] - w[0]); }, 0);
+    p.exposedLate = p.down.reduce(function (s, w) {
+      return s + Math.max(0, w[1] - Math.max(w[0], SPLIT));
+    }, 0);
+    p.exposedEarly = p.exposedSec - p.exposedLate;
+  });
+
+  // movement path (hip midpoint, shoulder-widths from centre)
+  P.forEach(function (p, pi) {
+    var pts = [], x = 0, y = 0, vx = 0, vy = 0;
+    var wander = pi === 0 ? 0.055 : 0.021;      // Andrew roams, Kai plants
+    for (var t = 0; t <= DUR; t += 0.5) {
+      vx = vx * 0.86 + (R() - 0.5) * wander;
+      vy = vy * 0.86 + (R() - 0.5) * wander * 0.62;
+      x = Math.max(-1.5, Math.min(1.5, x + vx));
+      y = Math.max(-0.9, Math.min(0.9, y + vy));
+      pts.push([x, y]);
+    }
+    p.path = pts;
+    var d = 0;
+    for (var i = 1; i < pts.length; i++)
+      d += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    p.moved = d;
+  });
+
+  /* ============================================================
+     SVG HELPERS
+     ============================================================ */
+  var NS = "http://www.w3.org/2000/svg";
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
+  function svg(w, h, label) {
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(label) + '">';
+  }
+  function txt(x, y, s, o) {
+    o = o || {};
+    return '<text x="' + x + '" y="' + y + '"' +
+      ' fill="' + (o.fill || "var(--muted)") + '"' +
+      ' font-size="' + (o.size || 11) + '"' +
+      ' font-weight="' + (o.weight || 400) + '"' +
+      ' text-anchor="' + (o.anchor || "start") + '"' +
+      ' font-family="' + (o.mono === false ? "system-ui, sans-serif" : "ui-monospace, SFMono-Regular, Menlo, monospace") + '"' +
+      (o.ls ? ' letter-spacing="' + o.ls + '"' : "") +
+      '>' + esc(s) + "</text>";
+  }
+  function line(x1, y1, x2, y2, stroke, w, extra) {
+    return '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 +
+      '" stroke="' + stroke + '" stroke-width="' + (w || 1) + '"' + (extra || "") + "/>";
+  }
+  function rect(x, y, w, h, fill, extra) {
+    if (w <= 0 || h <= 0) return "";
+    return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="' + fill + '"' + (extra || "") + "/>";
+  }
+  // bar with 4px rounded data-end, square at baseline
+  function capBar(x, y, w, h, fill, dir, extra) {
+    if (h <= 0.5) return "";
+    var r = Math.min(4, w / 2, h);
+    var d;
+    if (dir === "up")    d = "M" + x + " " + (y + h) + "V" + (y + r) + "a" + r + " " + r + " 0 0 1 " + r + " " + (-r) + "h" + (w - 2 * r) + "a" + r + " " + r + " 0 0 1 " + r + " " + r + "V" + (y + h) + "Z";
+    else if (dir === "down") d = "M" + x + " " + y + "V" + (y + h - r) + "a" + r + " " + r + " 0 0 0 " + r + " " + r + "h" + (w - 2 * r) + "a" + r + " " + r + " 0 0 0 " + r + " " + (-r) + "V" + y + "Z";
+    else if (dir === "right") { r = Math.min(4, h / 2, w); d = "M" + x + " " + y + "h" + (w - r) + "a" + r + " " + r + " 0 0 1 " + r + " " + r + "v" + (h - 2 * r) + "a" + r + " " + r + " 0 0 1 " + (-r) + " " + r + "H" + x + "Z"; }
+    else { r = Math.min(4, h / 2, w); d = "M" + (x + w) + " " + y + "h" + (-(w - r)) + "a" + r + " " + r + " 0 0 0 " + (-r) + " " + r + "v" + (h - 2 * r) + "a" + r + " " + r + " 0 0 0 " + r + " " + r + "H" + (x + w) + "Z"; }
+    return '<path d="' + d + '" fill="' + fill + '"' + (extra || "") + "/>";
+  }
+  function tipAttr(rows, hd) {
+    return ' class="tipx" data-tip="' + esc(JSON.stringify({ hd: hd, rows: rows })) + '"';
+  }
+  function mount(id, html) { var el = document.getElementById(id); if (el) el.innerHTML = html; }
+  function fmt(n, d) { return n.toFixed(d === undefined ? 1 : d); }
+  function mmss(t) { var m = Math.floor(t / 60), s = Math.floor(t % 60); return m + ":" + (s < 10 ? "0" : "") + s; }
+
+  function table(id, cap, heads, rows) {
+    var h = '<table><caption>' + esc(cap) + '</caption><thead><tr>';
+    heads.forEach(function (x) { h += "<th>" + esc(x) + "</th>"; });
+    h += "</tr></thead><tbody>";
+    rows.forEach(function (r) {
+      h += "<tr>";
+      r.forEach(function (c) { h += "<td>" + esc(c) + "</td>"; });
+      h += "</tr>";
+    });
+    mount(id, h + "</tbody></table>");
+  }
+
+  var CA = "var(--corner-a)", CB = "var(--corner-b)";
+  function ck(i) { return i === 0 ? CA : CB; }
+
+  /* ============================================================
+     KPI ROW
+     ============================================================ */
+  (function () {
+    var a = P[0];
+    var tiles = [
+      { hero: true, label: "Top punch speed · Andrew", val: fmt(a.top), unit: "mph",
+        sub: "fight record · " + mmss(a.record.t) },
+      { label: "Punches thrown", val: a.thrown, sub: fmt(a.thrown / (DUR / 60), 0) + "/min" },
+      { label: "Accuracy", val: Math.round(a.acc * 100), unit: "%", sub: a.landedN + " landed" },
+      { label: "Guard uptime", val: Math.round(a.uptime * 100), unit: "%", sub: "pool 24th pct", dn: true },
+      { label: "Damage dealt", val: Math.round(a.dealt), sub: "took " + Math.round(100 - finalA) }
+    ];
+    var h = "";
+    tiles.forEach(function (t) {
+      h += '<div class="kpi' + (t.hero ? " hero-tile" : "") + '">' +
+        '<span class="k-label">' + esc(t.label) + "</span>" +
+        '<span class="k-val">' + esc(t.val) + (t.unit ? '<span class="unit"> ' + esc(t.unit) + "</span>" : "") + "</span>" +
+        '<span class="k-sub' + (t.dn ? " dn" : "") + '">' + esc(t.sub) + "</span></div>";
+    });
+    mount("kpiRow", h);
+  })();
+
+  /* ============================================================
+     FIGHT TAPE — the hero
+     ============================================================ */
+  (function () {
+    var W = 1000, H = 340, L = 54, Rt = 18;
+    var x0 = L, x1 = W - Rt, pw = x1 - x0;
+    var mid = 176, gap = 26;              // axis band centre
+    var laneH = 104;
+    var X = function (t) { return x0 + (t / DUR) * pw; };
+    var HGT = function (mph) { return (mph / MAXMPH) * laneH; };
+
+    var s = svg(W, H, "Fight tape: every punch by time and speed for both fighters");
+
+    // guard strips (state, not series → neutral)
+    [0, 1].forEach(function (pi) {
+      var y = pi === 0 ? 14 : H - 30;
+      s += rect(x0, y, pw, 9, "var(--grid)", ' rx="4.5"');
+      P[pi].down.forEach(function (w) {
+        s += rect(X(w[0]), y, X(w[1]) - X(w[0]), 9, "var(--muted)",
+          ' rx="4.5"' + tipAttr([{ c: "var(--muted)", l: P[pi].name + " exposed", v: fmt(w[1] - w[0]) + " s" }],
+            mmss(w[0]) + " – " + mmss(w[1])));
+      });
+      s += txt(x0 - 8, y + 8, "GUARD", { anchor: "end", size: 9, ls: "0.1em" });
+    });
+
+    // gridlines every 15s
+    for (var t = 0; t <= DUR; t += 15) {
+      s += line(X(t), 30, X(t), H - 38, "var(--grid)", 1);
+    }
+
+    // speed reference ticks
+    [10, 20, 30].forEach(function (v) {
+      [0, 1].forEach(function (pi) {
+        var base = pi === 0 ? mid - gap : mid + gap;
+        var y = pi === 0 ? base - HGT(v) : base + HGT(v);
+        s += line(x0, y, x1, y, "var(--grid)", 1);
+        s += txt(x0 - 8, y + 3.5, v, { anchor: "end", size: 10 });
+      });
+    });
+
+    // stems
+    [0, 1].forEach(function (pi) {
+      var p = P[pi], base = pi === 0 ? mid - gap : mid + gap, dir = pi === 0 ? -1 : 1;
+      s += line(x0, base, x1, base, "var(--axis)", 1);
+      p.punches.forEach(function (pu, i) {
+        var x = X(pu.t), h = HGT(pu.mph), yEnd = base + dir * h;
+        var col = ck(pi);
+        var tip = tipAttr([
+          { c: col, l: p.name, v: fmt(pu.mph) + " mph" },
+          { c: "transparent", l: pu.landed ? "landed" : "blocked by guard", v: pu.hand + " hand" }
+        ], mmss(pu.t) + "." + String(Math.floor((pu.t % 1) * 10)));
+        s += '<line x1="' + x + '" y1="' + base + '" x2="' + x + '" y2="' + yEnd +
+          '" stroke="' + col + '" stroke-width="2" stroke-linecap="round" opacity="' +
+          (pu.landed ? 1 : 0.3) + '"/>';
+        if (pu.landed) {
+          s += '<circle cx="' + x + '" cy="' + yEnd + '" r="4" fill="' + col +
+            '" stroke="var(--surface)" stroke-width="2"/>';
+        }
+        // generous transparent hit target
+        s += '<rect x="' + (x - 6) + '" y="' + Math.min(base, yEnd) + '" width="12" height="' +
+          (Math.abs(h) + 8) + '" class="hit"' + tip + "/>";
+      });
+      // name label — right edge, clear of the record annotation on the left
+      s += txt(x1, pi === 0 ? 40 : H - 46, p.name.toUpperCase(),
+        { anchor: "end", fill: "var(--ink)", size: 12, weight: 700, ls: "0.12em" });
+    });
+
+    // record punch annotation
+    var rp = P[0].record, rx = X(rp.t), ry = (mid - gap) - HGT(rp.mph);
+    s += line(rx, ry - 6, rx, ry - 22, "var(--axis)", 1);
+    s += txt(rx + 6, ry - 24, "FIGHT RECORD " + fmt(rp.mph) + " MPH",
+      { fill: "var(--ink)", size: 10, weight: 700, ls: "0.08em" });
+
+    // time axis
+    for (var t2 = 0; t2 <= DUR; t2 += 15) {
+      s += txt(X(t2), mid + 4, mmss(t2), { anchor: t2 === 0 ? "start" : (t2 === DUR ? "end" : "middle"), size: 10.5 });
+    }
+    s += txt(x0 - 8, mid + 4, "MPH", { anchor: "end", size: 9, ls: "0.1em" });
+
+    mount("c-tape", s + "</svg>");
+
+    var rows = [];
+    P.forEach(function (p, pi) {
+      p.punches.forEach(function (pu) {
+        rows.push([p.name, mmss(pu.t) + "." + Math.floor((pu.t % 1) * 10), pu.hand, fmt(pu.mph), pu.landed ? "landed" : "blocked"]);
+      });
+    });
+    rows.sort(function (x, y) { return x[1] < y[1] ? -1 : 1; });
+    table("t-tape", "Fight tape — every punch event", ["Fighter", "Time", "Hand", "Speed (mph)", "Result"], rows);
+  })();
+
+  /* ============================================================
+     MOMENTUM — diverging, shares the tape's x-axis
+     ============================================================ */
+  (function () {
+    var W = 1000, H = 200, L = 54, Rt = 18, T = 20, B = 34;
+    var x0 = L, x1 = W - Rt, pw = x1 - x0;
+    var zero = T + (H - T - B) / 2, half = (H - T - B) / 2;
+    var X = function (t) { return x0 + (t / DUR) * pw; };
+    var Y = function (d) { return zero - (d / 100) * half; };
+
+    var s = svg(W, H, "Momentum: health differential over time");
+
+    for (var t = 0; t <= DUR; t += 15) s += line(X(t), T, X(t), H - B, "var(--grid)", 1);
+    [-50, 50].forEach(function (v) { s += line(x0, Y(v), x1, Y(v), "var(--grid)", 1); });
+
+    // split the area at the zero crossing
+    function areaPath(sign) {
+      var d = "M" + X(0) + " " + zero;
+      series.forEach(function (pt) {
+        var v = sign > 0 ? Math.max(0, pt.d) : Math.min(0, pt.d);
+        d += "L" + X(pt.t) + " " + Y(v);
+      });
+      d += "L" + X(DUR) + " " + zero + "Z";
+      return d;
+    }
+    s += '<path d="' + areaPath(1) + '" fill="' + CA + '" opacity="0.16"/>';
+    s += '<path d="' + areaPath(-1) + '" fill="' + CB + '" opacity="0.16"/>';
+
+    // the differential line, coloured by who leads
+    var d1 = "";
+    series.forEach(function (pt, i) { d1 += (i ? "L" : "M") + X(pt.t) + " " + Y(pt.d); });
+    s += '<path d="' + d1 + '" fill="none" stroke="var(--ink-2)" stroke-width="2" stroke-linejoin="round"/>';
+    s += line(x0, zero, x1, zero, "var(--axis)", 1);
+
+    // crossover annotation
+    if (crossover !== null) {
+      s += line(X(crossover), T, X(crossover), H - B, "var(--ink)", 1);
+      s += '<circle cx="' + X(crossover) + '" cy="' + zero + '" r="4.5" fill="var(--ink)" stroke="var(--surface)" stroke-width="2"/>';
+      s += txt(X(crossover) - 8, T + 14, "LEAD CHANGES " + mmss(crossover),
+        { anchor: "end", fill: "var(--ink)", size: 10, weight: 700, ls: "0.08em" });
+    }
+
+    s += txt(x0 + 6, T + 14, "ANDREW AHEAD", { fill: "var(--corner-a-deep)", size: 10, weight: 700, ls: "0.08em" });
+    s += txt(x0 + 6, H - B - 6, "KAI AHEAD", { fill: "var(--corner-b-deep)", size: 10, weight: 700, ls: "0.08em" });
+    for (var t3 = 0; t3 <= DUR; t3 += 15)
+      s += txt(X(t3), H - 12, mmss(t3), { anchor: t3 === 0 ? "start" : (t3 === DUR ? "end" : "middle"), size: 10.5 });
+    s += txt(x0 - 8, Y(50) + 3.5, "+50", { anchor: "end", size: 10 });
+    s += txt(x0 - 8, zero + 3.5, "0", { anchor: "end", size: 10 });
+    s += txt(x0 - 8, Y(-50) + 3.5, "-50", { anchor: "end", size: 10 });
+
+    // crosshair hit columns
+    series.forEach(function (pt, i) {
+      if (i % 2) return;
+      s += '<rect x="' + (X(pt.t) - 5) + '" y="' + T + '" width="10" height="' + (H - T - B) +
+        '" class="hit"' + tipAttr([
+          { c: CA, l: "Andrew", v: Math.round(pt.a) + " hp" },
+          { c: CB, l: "Kai", v: Math.round(pt.b) + " hp" }
+        ], mmss(pt.t)) + "/>";
+    });
+
+    mount("c-momentum", s + "</svg>");
+
+    var rows = [];
+    series.forEach(function (pt) {
+      if (Math.abs(pt.t % 5) > 1e-6) return;
+      rows.push([mmss(pt.t), Math.round(pt.a), Math.round(pt.b), (pt.d > 0 ? "+" : "") + Math.round(pt.d)]);
+    });
+    table("t-momentum", "Health by time (5 s samples)", ["Time", "Andrew hp", "Kai hp", "Differential"], rows);
+  })();
+
+  /* ============================================================
+     CADENCE
+     ============================================================ */
+  (function () {
+    var W = 520, H = 268, L = 42, Rt = 44, T = 18, B = 48;
+    var x0 = L, x1 = W - Rt, y0 = T, y1 = H - B;
+    var bins = 9, bw = DUR / bins, maxV = 0;
+    var data = P.map(function (p) {
+      return Array.from({ length: bins }, function (_, i) {
+        var n = p.punches.filter(function (x) { return x.t >= i * bw && x.t < (i + 1) * bw; }).length;
+        if (n > maxV) maxV = n;
+        return n;
+      });
+    });
+    maxV = Math.ceil(maxV / 2) * 2 + 2;
+    var X = function (i) { return x0 + ((i + 0.5) / bins) * (x1 - x0); };
+    var Y = function (v) { return y1 - (v / maxV) * (y1 - y0); };
+
+    var s = svg(W, H, "Punches thrown per 10 second window");
+    for (var v = 0; v <= maxV; v += 2) {
+      s += line(x0, Y(v), x1, Y(v), "var(--grid)", 1);
+      s += txt(x0 - 8, Y(v) + 3.5, v, { anchor: "end", size: 10 });
+    }
+    s += line(x0, y1, x1, y1, "var(--axis)", 1);
+
+    data.forEach(function (arr, pi) {
+      var d = "";
+      arr.forEach(function (v, i) { d += (i ? "L" : "M") + X(i) + " " + Y(v); });
+      s += '<path d="' + d + '" fill="none" stroke="' + ck(pi) + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+      arr.forEach(function (v, i) {
+        s += '<circle cx="' + X(i) + '" cy="' + Y(v) + '" r="4" fill="' + ck(pi) + '" stroke="var(--surface)" stroke-width="2"/>';
+        s += '<rect x="' + (X(i) - 12) + '" y="' + (Y(v) - 12) + '" width="24" height="24" class="hit"' +
+          tipAttr([{ c: ck(pi), l: P[pi].name, v: v + " punches" }],
+            mmss(i * bw) + " – " + mmss((i + 1) * bw)) + "/>";
+      });
+      // direct end label
+      var lastV = arr[bins - 1];
+      s += txt(X(bins - 1) + 9, Y(lastV) + 4, P[pi].name + " " + lastV,
+        { fill: "var(--ink-2)", size: 11, weight: 600 });
+    });
+    s += txt(x0, H - 28, "0:00", { size: 10 });
+    s += txt(x1, H - 28, "1:30", { anchor: "end", size: 10 });
+    s += txt(x0, H - 9, "punches / 10 s", { size: 9.5, ls: "0.1em" });
+
+    mount("c-cadence", s + "</svg>");
+    table("t-cadence", "Punches per 10-second window",
+      ["Window", "Andrew", "Kai"],
+      data[0].map(function (v, i) { return [mmss(i * bw) + "–" + mmss((i + 1) * bw), v, data[1][i]]; }));
+  })();
+
+  /* ============================================================
+     FATIGUE — scatter + rolling mean
+     ============================================================ */
+  (function () {
+    var W = 520, H = 268, L = 42, Rt = 68, T = 18, B = 48;
+    var x0 = L, x1 = W - Rt, y0 = T, y1 = H - B;
+    var ends = [];
+    var X = function (t) { return x0 + (t / DUR) * (x1 - x0); };
+    var Y = function (m) { return y1 - ((m - 14) / (MAXMPH - 14)) * (y1 - y0); };
+
+    var s = svg(W, H, "Punch speed over time with rolling mean per fighter");
+    [18, 24, 30].forEach(function (v) {
+      s += line(x0, Y(v), x1, Y(v), "var(--grid)", 1);
+      s += txt(x0 - 8, Y(v) + 3.5, v, { anchor: "end", size: 10 });
+    });
+    s += line(x0, y1, x1, y1, "var(--axis)", 1);
+
+    P.forEach(function (p, pi) {
+      p.punches.forEach(function (pu) {
+        s += '<circle cx="' + X(pu.t) + '" cy="' + Y(pu.mph) + '" r="3.4" fill="' + ck(pi) +
+          '" opacity="0.42"/>';
+        s += '<circle cx="' + X(pu.t) + '" cy="' + Y(pu.mph) + '" r="12" class="hit"' +
+          tipAttr([{ c: ck(pi), l: p.name, v: fmt(pu.mph) + " mph" }], mmss(pu.t)) + "/>";
+      });
+      // rolling mean, window 9
+      var d = "", k = 9;
+      p.punches.forEach(function (pu, i) {
+        var lo = Math.max(0, i - Math.floor(k / 2)), hi = Math.min(p.punches.length, lo + k);
+        var m = 0; for (var j = lo; j < hi; j++) m += p.punches[j].mph;
+        m /= (hi - lo);
+        d += (i ? "L" : "M") + X(pu.t) + " " + Y(m);
+      });
+      s += '<path d="' + d + '" fill="none" stroke="' + ck(pi) + '" stroke-width="2" stroke-linejoin="round"/>';
+      var last = p.punches[p.punches.length - 1];
+      var lo = p.punches.length - 9, m = 0;
+      for (var j = lo; j < p.punches.length; j++) m += p.punches[j].mph;
+      ends.push({ pi: pi, x: X(last.t), y: Y(m / 9), fat: p.fatigue });
+    });
+
+    // The two trend lines converge at the right edge, so end-labels collide.
+    // Push them apart and run a leader line back to each line-end.
+    ends.sort(function (u, v) { return u.y - v.y; });
+    if (ends.length === 2 && ends[1].y - ends[0].y < 24) {
+      var mid = (ends[0].y + ends[1].y) / 2;
+      ends[0].ly = mid - 12; ends[1].ly = mid + 12;
+    } else { ends.forEach(function (e) { e.ly = e.y; }); }
+    ends.forEach(function (e) {
+      if (Math.abs(e.ly - e.y) > 1) s += line(e.x + 4, e.y, e.x + 11, e.ly, "var(--axis)", 1);
+      s += '<circle cx="' + (e.x + 14) + '" cy="' + (e.ly - 3) + '" r="3.2" fill="' + ck(e.pi) + '"/>';
+      s += txt(e.x + 21, e.ly, (e.fat > 0 ? "+" : "") + Math.round(e.fat * 100) + "%",
+        { fill: "var(--ink-2)", size: 11, weight: 700 });
+    });
+    s += txt(x0, H - 28, "0:00", { size: 10 });
+    s += txt(x1, H - 28, "1:30", { anchor: "end", size: 10 });
+    s += txt(x0, H - 9, "mph · Δ first third → last third", { size: 9.5, ls: "0.08em" });
+
+    mount("c-fatigue", s + "</svg>");
+    table("t-fatigue", "Mean punch speed by third",
+      ["Fighter", "First 30 s", "Middle 30 s", "Last 30 s", "Change"],
+      P.map(function (p) {
+        function seg(a, b) {
+          var s2 = p.punches.filter(function (x) { return x.t >= a && x.t < b; });
+          return fmt(s2.reduce(function (t, x) { return t + x.mph; }, 0) / s2.length);
+        }
+        return [p.name, seg(0, 30), seg(30, 60), seg(60, 90), (p.fatigue > 0 ? "+" : "") + Math.round(p.fatigue * 100) + "%"];
+      }));
+  })();
+
+  /* ============================================================
+     SPEED DISTRIBUTION — back to back histogram
+     ============================================================ */
+  (function () {
+    var W = 520, H = 300, T = 26, B = 34, L = 40, Rt = 16;
+    var cx = L + (W - L - Rt) / 2, halfW = (W - L - Rt) / 2 - 8, y0 = T, y1 = H - B;
+    var lo = 16, hi = 36, nb = 10, bh = (y1 - y0) / nb;
+    var counts = P.map(function (p) {
+      return Array.from({ length: nb }, function (_, i) {
+        var a = lo + (hi - lo) * i / nb, b = lo + (hi - lo) * (i + 1) / nb;
+        return p.punches.filter(function (x) { return x.mph >= a && x.mph < b; }).length;
+      });
+    });
+    var maxC = Math.max.apply(null, counts[0].concat(counts[1]));
+
+    var s = svg(W, H, "Punch speed distribution for both fighters");
+    for (var i = 0; i < nb; i++) {
+      var yTop = y1 - (i + 1) * bh + 1;      // 2px surface gap between bins
+      var h = bh - 2;
+      [0, 1].forEach(function (pi) {
+        var c = counts[pi][i];
+        if (!c) return;
+        var w = (c / maxC) * halfW;
+        var a = lo + (hi - lo) * i / nb, b = lo + (hi - lo) * (i + 1) / nb;
+        var tip = tipAttr([{ c: ck(pi), l: P[pi].name, v: c + (c === 1 ? " punch" : " punches") }],
+          fmt(a, 0) + "–" + fmt(b, 0) + " mph");
+        if (pi === 0) {
+          s += capBar(cx - 3 - w, yTop, w, h, CA, "left", tip);
+        } else {
+          s += capBar(cx + 3, yTop, w, h, CB, "right", tip);
+        }
+      });
+      // ticks live on the left axis — the 6px centre gap is far too narrow for them
+      if (i % 2 === 0) {
+        s += txt(L - 8, y1 - i * bh - bh / 2 + 3.5, fmt(lo + (hi - lo) * i / nb, 0),
+          { anchor: "end", size: 10 });
+      }
+    }
+    s += txt(cx - 8, T - 8, "ANDREW", { anchor: "end", fill: "var(--ink)", size: 10.5, weight: 700, ls: "0.1em" });
+    s += txt(cx + 8, T - 8, "KAI", { fill: "var(--ink)", size: 10.5, weight: 700, ls: "0.1em" });
+    // annotate the record
+    var recBin = Math.floor((P[0].record.mph - lo) / (hi - lo) * nb);
+    var ry = y1 - recBin * bh - bh / 2;
+    s += txt(cx - 3 - (counts[0][recBin] / maxC) * halfW - 8, ry + 3.5,
+      "record " + fmt(P[0].record.mph), { anchor: "end", fill: "var(--ink)", size: 10, weight: 600 });
+    s += txt(W / 2, H - 10, "mph", { anchor: "middle", size: 9.5, ls: "0.1em" });
+
+    mount("c-speeddist", s + "</svg>");
+    table("t-speeddist", "Punch count by speed band",
+      ["Band (mph)", "Andrew", "Kai"],
+      counts[0].map(function (c, i) {
+        return [fmt(lo + (hi - lo) * i / nb, 0) + "–" + fmt(lo + (hi - lo) * (i + 1) / nb, 0), c, counts[1][i]];
+      }));
+  })();
+
+  /* ============================================================
+     GUARD — meters (same-ramp track)
+     ============================================================ */
+  (function () {
+    var W = 520, H = 150, L = 84, Rt = 56;
+    var s = svg(W, H, "Guard uptime per fighter");
+    P.forEach(function (p, pi) {
+      var y = 34 + pi * 56, w = W - L - Rt;
+      s += txt(L - 12, y + 12, p.name, { anchor: "end", fill: "var(--ink)", size: 12.5, weight: 600, mono: false });
+      s += rect(L, y, w, 16, pi === 0 ? "var(--corner-a-soft)" : "var(--corner-b-soft)", ' rx="8"');
+      s += capBar(L, y, w * p.uptime, 16, ck(pi), "right",
+        tipAttr([{ c: ck(pi), l: p.name + " guard up", v: Math.round(p.uptime * 100) + "%" }], "Guard uptime"));
+      s += txt(L + w + 10, y + 12, Math.round(p.uptime * 100) + "%",
+        { fill: "var(--ink)", size: 13, weight: 700 });
+    });
+    s += txt(L, 20, "SHARE OF FIGHT WITH GUARD UP", { size: 9.5, ls: "0.1em" });
+    mount("c-guard", s + "</svg>");
+
+    var a = P[0], b = P[1];
+    document.getElementById("guardVerdict").innerHTML =
+      '<p class="rule-text" style="font-size:16px">Andrew was exposed for ' +
+      Math.round(a.exposedSec) + ' seconds — and <span style="color:var(--corner-b)">' +
+      Math.round(a.exposedLate) + ' of them came after 0:45</span>. Kai was exposed for ' +
+      Math.round(b.exposedSec) + ', all but ' + Math.round(b.exposedLate) + ' of them before it.</p>' +
+      '<p style="font-size:14px">Not <em>how much</em> each fighter was open, but <em>when</em>. ' +
+      'Kai was sloppy while it was cheap and tightened up exactly as Andrew ran out of air — ' +
+      'which is the lead change at ' + mmss(crossover) + ', arrived at from the other direction.</p>';
+
+    table("t-guard", "Exposure, by half",
+      ["Fighter", "Guard uptime", "Exposed (s)", "Before 0:45", "After 0:45", "Punches absorbed"],
+      P.map(function (p) {
+        return [p.name, Math.round(p.uptime * 100) + "%", Math.round(p.exposedSec),
+                Math.round(p.exposedEarly), Math.round(p.exposedLate), p.eaten];
+      }));
+  })();
+
+  /* ============================================================
+     BURSTS
+     ============================================================ */
+  (function () {
+    var W = 520, H = 240, L = 44, Rt = 18, T = 20, B = 44;
+    var x0 = L, x1 = W - Rt, y0 = T, y1 = H - B;
+    var cats = [1, 2, 3, 4];
+    var counts = P.map(function (p) {
+      return cats.map(function (c, i) {
+        return p.bursts.filter(function (b) { return i === cats.length - 1 ? b >= c : b === c; }).length;
+      });
+    });
+    var maxC = Math.max.apply(null, counts[0].concat(counts[1]));
+    var band = (x1 - x0) / cats.length, bw = Math.min(24, band / 2 - 3);
+
+    var s = svg(W, H, "Burst length distribution");
+    for (var v = 0; v <= maxC; v += Math.max(1, Math.ceil(maxC / 4))) {
+      var y = y1 - (v / maxC) * (y1 - y0);
+      s += line(x0, y, x1, y, "var(--grid)", 1);
+      s += txt(x0 - 8, y + 3.5, v, { anchor: "end", size: 10 });
+    }
+    s += line(x0, y1, x1, y1, "var(--axis)", 1);
+    cats.forEach(function (c, i) {
+      var cxb = x0 + band * (i + 0.5);
+      [0, 1].forEach(function (pi) {
+        var v = counts[pi][i], h = (v / maxC) * (y1 - y0);
+        var bx = pi === 0 ? cxb - bw - 1 : cxb + 1;      // 2px surface gap between neighbours
+        s += capBar(bx, y1 - h, bw, h, ck(pi), "up",
+          tipAttr([{ c: ck(pi), l: P[pi].name, v: v + " bursts" }],
+            (i === cats.length - 1 ? "4+ punches" : c + (c === 1 ? " punch" : " punches"))));
+      });
+      s += txt(cxb, H - 22, i === cats.length - 1 ? "4+" : String(c), { anchor: "middle", size: 11 });
+    });
+    s += txt(x0, H - 6, "punches per burst  ·  600 ms gap threshold", { size: 9.5, ls: "0.06em" });
+
+    mount("c-bursts", s + "</svg>");
+    table("t-bursts", "Bursts by length", ["Burst length", "Andrew", "Kai"],
+      cats.map(function (c, i) { return [i === cats.length - 1 ? "4+" : String(c), counts[0][i], counts[1][i]]; }));
+  })();
+
+  /* ============================================================
+     EXCHANGE RHYTHM
+     ============================================================ */
+  (function () {
+    var W = 520, H = 240, L = 44, Rt = 18, T = 20, B = 44;
+    var x0 = L, x1 = W - Rt, y0 = T, y1 = H - B;
+    var edges = [0, 0.4, 0.8, 1.2, 1.8, 3.0];
+    var counts = P.map(function (p) {
+      return edges.slice(0, -1).map(function (e, i) {
+        return p.lat.filter(function (v) { return v >= e && v < edges[i + 1]; }).length;
+      });
+    });
+    var maxC = Math.max.apply(null, counts[0].concat(counts[1]));
+    var nb = edges.length - 1, band = (x1 - x0) / nb, bw = Math.min(24, band / 2 - 3);
+
+    var s = svg(W, H, "Response latency after being hit");
+    for (var v = 0; v <= maxC; v += Math.max(1, Math.ceil(maxC / 4))) {
+      var y = y1 - (v / maxC) * (y1 - y0);
+      s += line(x0, y, x1, y, "var(--grid)", 1);
+      s += txt(x0 - 8, y + 3.5, v, { anchor: "end", size: 10 });
+    }
+    s += line(x0, y1, x1, y1, "var(--axis)", 1);
+    for (var i = 0; i < nb; i++) {
+      var cxb = x0 + band * (i + 0.5);
+      [0, 1].forEach(function (pi) {
+        var vv = counts[pi][i], h = (vv / maxC) * (y1 - y0);
+        var bx = pi === 0 ? cxb - bw - 1 : cxb + 1;
+        s += capBar(bx, y1 - h, bw, h, ck(pi), "up",
+          tipAttr([{ c: ck(pi), l: P[pi].name, v: vv + " responses" }],
+            fmt(edges[i], 1) + "–" + fmt(edges[i + 1], 1) + " s"));
+      });
+      s += txt(cxb, H - 22, fmt(edges[i], 1), { anchor: "middle", size: 10 });
+    }
+    s += txt(x0, H - 6, "seconds from taking a hit to throwing back", { size: 9.5, ls: "0.06em" });
+    s += txt(x1, T + 2, "median " + fmt(P[0].medianLat, 2) + "s / " + fmt(P[1].medianLat, 2) + "s",
+      { anchor: "end", size: 10.5, fill: "var(--ink-2)", weight: 600 });
+
+    mount("c-exchange", s + "</svg>");
+    table("t-exchange", "Response latency distribution", ["Band (s)", "Andrew", "Kai"],
+      counts[0].map(function (c, i) { return [fmt(edges[i], 1) + "–" + fmt(edges[i + 1], 1), c, counts[1][i]]; }));
+  })();
+
+  /* ============================================================
+     HAND BALANCE — one hue, two shades, per fighter
+     ============================================================ */
+  (function () {
+    var W = 520, H = 210, L = 96, Rt = 74;
+    var s = svg(W, H, "Left versus right hand usage per fighter");
+    var maxN = Math.max.apply(null, P.map(function (p) { return Math.max(p.hands[0].n, p.hands[1].n); }));
+    var w = W - L - Rt;
+    P.forEach(function (p, pi) {
+      var yBase = 30 + pi * 92;
+      s += txt(L - 12, yBase + 4, p.name, { anchor: "end", fill: "var(--ink)", size: 12.5, weight: 700, mono: false });
+      p.hands.forEach(function (hd, hi) {
+        var y = yBase + hi * 26;
+        var bw2 = (hd.n / maxN) * w;
+        var fill = hi === 0
+          ? (pi === 0 ? "var(--corner-a-mid)" : "var(--corner-b-mid)")   // left hand — lighter shade
+          : ck(pi);                                                       // right hand — full
+        s += txt(L - 12, y + 15, hd.hand === "L" ? "left" : "right",
+          { anchor: "end", size: 10.5, fill: "var(--muted)" });
+        s += capBar(L, y + 4, bw2, 14, fill, "right",
+          tipAttr([{ c: fill, l: p.name + " " + (hd.hand === "L" ? "left" : "right"), v: hd.n + " punches" },
+                   { c: "transparent", l: "mean speed", v: fmt(hd.mean) + " mph" }], "Hand balance"));
+        s += txt(L + bw2 + 9, y + 15, hd.n + " · " + fmt(hd.mean) + "mph",
+          { fill: "var(--ink-2)", size: 10.5, weight: 600 });
+      });
+    });
+    s += txt(L, 16, "PUNCHES BY HAND  ·  MEAN SPEED", { size: 9.5, ls: "0.1em" });
+    mount("c-hands", s + "</svg>");
+
+    var rows = [];
+    P.forEach(function (p) {
+      p.hands.forEach(function (h) { rows.push([p.name, h.hand === "L" ? "Left" : "Right", h.n, fmt(h.mean)]); });
+    });
+    table("t-hands", "Hand split", ["Fighter", "Hand", "Punches", "Mean mph"], rows);
+  })();
+
+  /* ============================================================
+     MOVEMENT FOOTPRINT — small multiples
+     ============================================================ */
+  (function () {
+    var W = 520, H = 230, pad = 14;
+    var cellW = (W - pad) / 2, cellH = H - 42;
+    var s = svg(W, H, "Hip-midpoint movement path per fighter, viewed from above");
+    P.forEach(function (p, pi) {
+      var ox = pi * (cellW + pad), oy = 26;
+      s += rect(ox, oy, cellW, cellH, "var(--surface-2)", ' rx="4"');
+      // centre crosshair
+      s += line(ox + cellW / 2, oy + 8, ox + cellW / 2, oy + cellH - 8, "var(--grid)", 1);
+      s += line(ox + 8, oy + cellH / 2, ox + cellW - 8, oy + cellH / 2, "var(--grid)", 1);
+      var X = function (v) { return ox + cellW / 2 + (v / 1.7) * (cellW / 2 - 12); };
+      var Y = function (v) { return oy + cellH / 2 + (v / 1.1) * (cellH / 2 - 12); };
+      var d = "";
+      p.path.forEach(function (pt, i) { d += (i ? "L" : "M") + fmt(X(pt[0]), 1) + " " + fmt(Y(pt[1]), 1); });
+      s += '<path d="' + d + '" fill="none" stroke="' + ck(pi) + '" stroke-width="1.6" opacity="0.62" stroke-linejoin="round"/>';
+      var last = p.path[p.path.length - 1];
+      s += '<circle cx="' + fmt(X(last[0]), 1) + '" cy="' + fmt(Y(last[1]), 1) + '" r="4" fill="' + ck(pi) +
+        '" stroke="var(--surface)" stroke-width="2"/>';
+      s += txt(ox, 16, p.name.toUpperCase(), { fill: "var(--ink)", size: 10.5, weight: 700, ls: "0.1em" });
+      s += txt(ox + cellW, 16, fmt(p.moved, 1) + " sw travelled", { anchor: "end", size: 10 });
+      s += '<rect x="' + ox + '" y="' + oy + '" width="' + cellW + '" height="' + cellH + '" class="hit"' +
+        tipAttr([{ c: ck(pi), l: p.name, v: fmt(p.moved, 1) + " shoulder-widths" }], "Distance travelled") + "/>";
+    });
+    s += txt(0, H - 6, "top-down · normalized to shoulder width", { size: 9.5, ls: "0.06em" });
+    mount("c-footprint", s + "</svg>");
+    table("t-footprint", "Movement", ["Fighter", "Distance (shoulder-widths)"],
+      P.map(function (p) { return [p.name, fmt(p.moved, 1)]; }));
+  })();
+
+  /* ============================================================
+     RADAR — style fingerprint
+     ============================================================ */
+  // Every axis is computed from this match — no hand-set numbers, so the
+  // fingerprint can never contradict the charts above it.
+  var AXES = ["Power", "Output", "Defense", "Aggression", "Endurance"];
+  function clamp100(v) { return Math.max(4, Math.min(100, Math.round(v))); }
+  var FP = P.map(function (p) {
+    return {
+      name: p.name,
+      v: [
+        clamp100((p.top - 18) / 18 * 100),      // Power      — peak speed
+        clamp100(p.thrown / 60 * 100),          // Output     — punches thrown
+        clamp100(p.uptime * 100),               // Defense    — guard uptime
+        clamp100(100 - p.medianLat * 55),       // Aggression — how fast you answer
+        clamp100(100 + p.fatigue * 420)         // Endurance  — speed decay
+      ]
+    };
+  });
+  (function () {
+    var W = 520, H = 330, cx = W / 2, cy = 168, Rr = 108;
+    var n = AXES.length;
+    function pt(i, v) {
+      var ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
+      return [cx + Math.cos(ang) * Rr * (v / 100), cy + Math.sin(ang) * Rr * (v / 100)];
+    }
+    var s = svg(W, H, "Five-axis style fingerprint for both fighters");
+    [25, 50, 75, 100].forEach(function (r) {
+      var d = "";
+      for (var i = 0; i < n; i++) { var p2 = pt(i, r); d += (i ? "L" : "M") + fmt(p2[0]) + " " + fmt(p2[1]); }
+      s += '<path d="' + d + 'Z" fill="none" stroke="var(--grid)" stroke-width="1"/>';
+    });
+    for (var i = 0; i < n; i++) {
+      var e = pt(i, 100);
+      s += line(cx, cy, fmt(e[0]), fmt(e[1]), "var(--grid)", 1);
+      var lp = pt(i, 128);
+      s += txt(fmt(lp[0]), fmt(lp[1]) + 4, AXES[i].toUpperCase(), {
+        anchor: Math.abs(lp[0] - cx) < 8 ? "middle" : (lp[0] > cx ? "start" : "end"),
+        size: 9.5, ls: "0.1em", fill: "var(--muted)"
+      });
+    }
+    FP.forEach(function (f, pi) {
+      var d = "";
+      f.v.forEach(function (v, i) { var p2 = pt(i, v); d += (i ? "L" : "M") + fmt(p2[0]) + " " + fmt(p2[1]); });
+      s += '<path d="' + d + 'Z" fill="' + ck(pi) + '" opacity="0.13"/>';
+      s += '<path d="' + d + 'Z" fill="none" stroke="' + ck(pi) + '" stroke-width="2" stroke-linejoin="round"/>';
+      f.v.forEach(function (v, i) {
+        var p2 = pt(i, v);
+        s += '<circle cx="' + fmt(p2[0]) + '" cy="' + fmt(p2[1]) + '" r="4" fill="' + ck(pi) +
+          '" stroke="var(--surface)" stroke-width="2"/>';
+        s += '<circle cx="' + fmt(p2[0]) + '" cy="' + fmt(p2[1]) + '" r="13" class="hit"' +
+          tipAttr([{ c: ck(pi), l: f.name, v: v + " / 100" }], AXES[i]) + "/>";
+      });
+    });
+    s += txt(W / 2, H - 8, "index 0–100, computed from this match", { anchor: "middle", size: 9.5, ls: "0.06em" });
+    mount("c-radar", s + "</svg>");
+    table("t-radar", "Style fingerprint", ["Axis", "Andrew", "Kai"],
+      AXES.map(function (a, i) { return [a, FP[0].v[i], FP[1].v[i]]; }));
+  })();
+
+  /* ============================================================
+     PB PROGRESSION — single series, emphasis on PBs
+     ============================================================ */
+  (function () {
+    var hist = [27.1, 29.4, 28.8, 31.2, 30.5, 33.0, 32.4, 34.2];
+    var W = 520, H = 230, L = 44, Rt = 24, T = 26, B = 40;
+    var x0 = L, x1 = W - Rt, y0 = T, y1 = H - B;
+    var X = function (i) { return x0 + (i / (hist.length - 1)) * (x1 - x0); };
+    var Y = function (v) { return y1 - ((v - 24) / (36 - 24)) * (y1 - y0); };
+
+    var s = svg(W, H, "Top punch speed across the last eight matches");
+    [26, 30, 34].forEach(function (v) {
+      s += line(x0, Y(v), x1, Y(v), "var(--grid)", 1);
+      s += txt(x0 - 8, Y(v) + 3.5, v, { anchor: "end", size: 10 });
+    });
+    s += line(x0, y1, x1, y1, "var(--axis)", 1);
+
+    var d = "";
+    hist.forEach(function (v, i) { d += (i ? "L" : "M") + X(i) + " " + Y(v); });
+    s += '<path d="' + d + '" fill="none" stroke="' + CA + '" stroke-width="2" stroke-linejoin="round"/>';
+
+    var best = 0;
+    hist.forEach(function (v, i) {
+      var isPB = v > best; if (isPB) best = v;
+      s += '<circle cx="' + X(i) + '" cy="' + Y(v) + '" r="' + (isPB ? 4.5 : 3.4) + '" fill="' +
+        (isPB ? CA : "var(--axis)") + '" stroke="var(--surface)" stroke-width="2"/>';
+      s += '<circle cx="' + X(i) + '" cy="' + Y(v) + '" r="14" class="hit"' +
+        tipAttr([{ c: isPB ? CA : "var(--axis)", l: isPB ? "New personal best" : "Top speed", v: fmt(v) + " mph" }],
+          "Match " + (i + 1)) + "/>";
+      s += txt(X(i), H - 22, "m" + (i + 1), { anchor: "middle", size: 9.5 });
+    });
+    s += txt(X(hist.length - 1), Y(hist[hist.length - 1]) - 13, fmt(hist[hist.length - 1]) + " mph",
+      { anchor: "end", fill: "var(--ink)", size: 11.5, weight: 700 });
+    s += txt(x0, T - 10, "TOP PUNCH SPEED · LAST 8 MATCHES", { size: 9.5, ls: "0.1em" });
+    s += txt(x0, H - 6, "filled dot = new personal best", { size: 9.5, ls: "0.06em" });
+
+    mount("c-pb", s + "</svg>");
+    var best2 = 0;
+    table("t-pb", "Top speed per match", ["Match", "Top speed (mph)", "Personal best"],
+      hist.map(function (v, i) { var pb = v > best2; if (pb) best2 = v; return ["Match " + (i + 1), fmt(v), pb ? "yes" : ""]; }));
+  })();
+
+  /* ============================================================
+     PERCENTILE ROWS
+     ============================================================ */
+  (function () {
+    var rows = [
+      { l: "Top speed", v: 78 }, { l: "Output rate", v: 91 },
+      { l: "Guard uptime", v: 24 }, { l: "Endurance", v: 19 }, { l: "Accuracy", v: 46 }
+    ];
+    var h = "";
+    rows.forEach(function (r) {
+      h += '<div class="pct-row"><span class="lab">' + esc(r.l) + "</span>" +
+        '<span class="pct-track"><span class="pct-fill' + (r.v < 40 ? " low" : "") +
+        '" style="width:' + r.v + '%"></span></span>' +
+        '<span class="num">' + r.v + "</span></div>";
+    });
+    mount("pctRows", h);
+  })();
+
+  /* ============================================================
+     PLAYER POOL — emphasis: one hue + grey
+     ============================================================ */
+  (function () {
+    var W = 1000, H = 220, L = 44, Rt = 18, T = 34, B = 44;
+    var x0 = L, x1 = W - Rt, y0 = T, y1 = H - B;
+    var lo = 12, hi = 40, nb = 28;
+    var G = mulberry32(77);
+    var bins = Array.from({ length: nb }, function (_, i) {
+      var c = lo + (hi - lo) * (i + 0.5) / nb;
+      var v = Math.exp(-Math.pow((c - 24.5) / 4.4, 2)) * 940;
+      return Math.round(v * (0.86 + G() * 0.28));
+    });
+    var maxB = Math.max.apply(null, bins);
+    var youBin = Math.floor((34.2 - lo) / (hi - lo) * nb);
+    var bw = (x1 - x0) / nb - 2;                     // 2px surface gap between neighbours
+
+    var s = svg(W, H, "Distribution of top punch speed across all players");
+    [0, Math.round(maxB / 2), maxB].forEach(function (v) {
+      var y = y1 - (v / maxB) * (y1 - y0);
+      s += line(x0, y, x1, y, "var(--grid)", 1);
+      s += txt(x0 - 8, y + 3.5, v >= 1000 ? (v / 1000).toFixed(1) + "k" : v, { anchor: "end", size: 10 });
+    });
+    s += line(x0, y1, x1, y1, "var(--axis)", 1);
+    bins.forEach(function (v, i) {
+      var h = (v / maxB) * (y1 - y0);
+      var isYou = i === youBin;
+      s += capBar(x0 + i * ((x1 - x0) / nb) + 1, y1 - h, bw, h,
+        isYou ? CA : "var(--axis)", "up",
+        tipAttr([{ c: isYou ? CA : "var(--axis)", l: isYou ? "Your band — 34.2 mph" : "Fighters", v: v.toLocaleString() }],
+          fmt(lo + (hi - lo) * i / nb, 0) + "–" + fmt(lo + (hi - lo) * (i + 1) / nb, 0) + " mph"));
+    });
+    // "you are here"
+    var yx = x0 + youBin * ((x1 - x0) / nb) + bw / 2 + 1;
+    var yh = (bins[youBin] / maxB) * (y1 - y0);
+    s += line(yx, y1 - yh - 8, yx, T + 16, CA, 1);
+    s += txt(yx, T + 10, "YOU · 34.2 MPH · 78TH PERCENTILE",
+      { anchor: yx > W * 0.7 ? "end" : "start", fill: "var(--corner-a-deep)", size: 11, weight: 700, ls: "0.08em" });
+    s += txt(x0, T - 14, "FIGHTERS BY TOP RECORDED PUNCH SPEED", { size: 9.5, ls: "0.1em" });
+    for (var m = 15; m <= 40; m += 5) {
+      var mx = x0 + ((m - lo) / (hi - lo)) * (x1 - x0);
+      s += txt(mx, H - 22, m, { anchor: "middle", size: 10 });
+    }
+    s += txt(x0, H - 6, "mph", { size: 9.5, ls: "0.1em" });
+
+    mount("c-pool", s + "</svg>");
+    table("t-pool", "Player pool by top speed", ["Band (mph)", "Fighters"],
+      bins.map(function (v, i) {
+        return [fmt(lo + (hi - lo) * i / nb, 0) + "–" + fmt(lo + (hi - lo) * (i + 1) / nb, 0), v.toLocaleString()];
+      }));
+  })();
+
+  /* ============================================================
+     LEADERBOARD
+     ============================================================ */
+  (function () {
+    var rows = [
+      ["1", "hurricane_j", "41.8", "3 Aug", "5–1"],
+      ["2", "not_a_boxer", "39.2", "28 Jul", "12–9"],
+      ["3", "sam", "38.7", "6 Aug", "2–0"],
+      ["4", "TAPEWORM", "37.4", "19 Jul", "8–8"],
+      ["5", "quietriot", "36.9", "1 Aug", "4–3"],
+      ["6", "mothlight", "35.1", "22 Jul", "1–5"],
+      ["7", "Andrew", "34.2", "8 Aug", "5–3"],
+      ["8", "dpad", "33.8", "30 Jul", "6–2"]
+    ];
+    var h = '<table style="border-collapse:collapse;width:100%;font-size:13.5px">' +
+      '<thead><tr>' +
+      ["#", "Fighter", "Top speed (mph)", "Set", "Record"].map(function (x, i) {
+        return '<th style="text-align:' + (i > 1 ? "right" : "left") +
+          ';padding:8px 14px 8px 0;border-bottom:1px solid var(--axis);font-family:var(--mono);font-size:10.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);font-weight:600">' +
+          esc(x) + "</th>";
+      }).join("") + "</tr></thead><tbody>";
+    rows.forEach(function (r) {
+      var me = r[1] === "Andrew";
+      h += '<tr style="' + (me ? "background:var(--corner-a-soft)" : "") + '">';
+      r.forEach(function (c, i) {
+        h += '<td style="text-align:' + (i > 1 ? "right" : "left") +
+          ';padding:9px 14px 9px 0;border-bottom:1px solid var(--grid);' +
+          "font-family:" + (i === 1 ? "var(--sans)" : "var(--mono)") + ";" +
+          "font-variant-numeric:tabular-nums;color:" + (me || i === 2 ? "var(--ink)" : "var(--ink-2)") + ";" +
+          (me ? "font-weight:650;" : "") + '">' +
+          (i === 1 && me ? '<span class="tile-corner"><i class="a"></i>' + esc(c) + "</span>" : esc(c)) +
+          "</td>";
+      });
+      h += "</tr>";
+    });
+    mount("leaderboard", h + "</tbody></table>");
+  })();
+
+  /* ============================================================
+     HUD — webcam feed stand-ins (Canvas, per the "no long SVG paths" rule)
+     ============================================================ */
+  (function () {
+    function drawFeed(id, hue, seed, guardUp) {
+      var cv = document.getElementById(id);
+      if (!cv) return;
+      var w = cv.clientWidth || 400, h = cv.clientHeight || 300;
+      var dpr = Math.min(2, window.devicePixelRatio || 1);
+      cv.width = w * dpr; cv.height = h * dpr;
+      var g = cv.getContext("2d"); g.scale(dpr, dpr);
+
+      // Ambient stays neutral in BOTH feeds, so the red exposure vignette can only
+      // ever mean "guard down" — a corner-tinted room would read as danger too.
+      var grad = g.createRadialGradient(w / 2, h * 0.42, 10, w / 2, h * 0.5, h * 0.95);
+      grad.addColorStop(0, "#191d24");
+      grad.addColorStop(1, "#0a0c10");
+      g.fillStyle = grad; g.fillRect(0, 0, w, h);
+
+      // skeleton overlay — what pose tracking actually looks like on screen
+      var col = hue === "a" ? "#3987e5" : "#e66767";
+      var cx = w / 2, sy = h * 0.42, sw = w * 0.20;
+      // guard up: wrists high and tight to the centreline, elbows tucked.
+      // guard down: wrists dropped below the hips and swung wide.
+      var joints = guardUp ? {
+        head: [cx, sy - h * 0.13],
+        shL: [cx - sw, sy], shR: [cx + sw, sy],
+        elL: [cx - sw * 1.02, sy + h * 0.13], elR: [cx + sw * 1.02, sy + h * 0.13],
+        wrL: [cx - sw * 0.42, sy - h * 0.10], wrR: [cx + sw * 0.42, sy - h * 0.10],
+        hpL: [cx - sw * 0.68, sy + h * 0.27], hpR: [cx + sw * 0.68, sy + h * 0.27],
+        knL: [cx - sw * 0.82, sy + h * 0.47], knR: [cx + sw * 0.82, sy + h * 0.47]
+      } : {
+        head: [cx, sy - h * 0.13],
+        shL: [cx - sw, sy], shR: [cx + sw, sy],
+        elL: [cx - sw * 1.55, sy + h * 0.14], elR: [cx + sw * 1.55, sy + h * 0.14],
+        wrL: [cx - sw * 1.85, sy + h * 0.34], wrR: [cx + sw * 1.72, sy + h * 0.31],
+        hpL: [cx - sw * 0.68, sy + h * 0.27], hpR: [cx + sw * 0.68, sy + h * 0.27],
+        knL: [cx - sw * 0.82, sy + h * 0.47], knR: [cx + sw * 0.82, sy + h * 0.47]
+      };
+      var bones = [["shL","shR"],["shL","elL"],["elL","wrL"],["shR","elR"],["elR","wrR"],
+                   ["shL","hpL"],["shR","hpR"],["hpL","hpR"],["hpL","knL"],["hpR","knR"]];
+      g.strokeStyle = col; g.lineWidth = 2.4; g.lineCap = "round"; g.globalAlpha = 0.9;
+      bones.forEach(function (b) {
+        g.beginPath();
+        g.moveTo(joints[b[0]][0], joints[b[0]][1]);
+        g.lineTo(joints[b[1]][0], joints[b[1]][1]);
+        g.stroke();
+      });
+      g.globalAlpha = 1;
+      g.fillStyle = "#fff";
+      Object.keys(joints).forEach(function (k) {
+        g.beginPath(); g.arc(joints[k][0], joints[k][1], 3.2, 0, Math.PI * 2); g.fill();
+      });
+      g.strokeStyle = col; g.lineWidth = 3;
+      g.beginPath(); g.arc(joints.head[0], joints.head[1], h * 0.07, 0, Math.PI * 2); g.stroke();
+
+      // guard-height reference line
+      g.strokeStyle = "rgba(255,255,255,0.22)"; g.lineWidth = 1; g.setLineDash([]);
+      g.beginPath(); g.moveTo(w * 0.1, sy); g.lineTo(w * 0.9, sy); g.stroke();
+    }
+    function paint() {
+      drawFeed("feedA", "a", 1, false);   // Andrew — guard dropped
+      drawFeed("feedB", "b", 2, true);    // Kai — still covered
+    }
+    paint();
+    var ro = window.ResizeObserver ? new ResizeObserver(paint) : null;
+    if (ro) ro.observe(document.getElementById("hudMock"));
+    else window.addEventListener("resize", paint);
+  })();
+
+  /* ============================================================
+     ARCHETYPE RATIONALE — read off the match, never hand-set
+     ============================================================ */
+  (function () {
+    var a = P[0];
+    var rows = [
+      ["Because", a.thrown + " punches at " + Math.round(a.thrown / (DUR / 60)) +
+        " a minute, with your guard up only " + Math.round(a.uptime * 100) + "% of the fight."],
+      ["Costs you", "Endurance " + FP[0].v[4] + " — mean speed falls " +
+        Math.abs(Math.round(a.fatigue * 100)) + "% from the first third to the last."],
+      ["Beats", "Turtles, and anyone who fades before you do."],
+      ["Loses to", "Fighters who can hold a guard for ninety seconds. Like Kai, today."]
+    ];
+    var h = "";
+    rows.forEach(function (r) { h += "<div><b>" + esc(r[0]) + "</b><span>" + esc(r[1]) + "</span></div>"; });
+    mount("archWhy", h);
+  })();
+
+  /* ============================================================
+     HUD SNAPSHOT — frozen at a real instant of the same fight
+     ============================================================ */
+  (function () {
+    // Pick the most illustrative instant rather than a hand-chosen one: after the
+    // lead change, Andrew exposed, and as deep into a combo as the fight ever gets.
+    var T = 78, bestC = 0;
+    P[0].punches.forEach(function (pu, i) {
+      if (pu.t < crossover) return;
+      var exposed = P[0].down.some(function (d) { return pu.t >= d[0] && pu.t < d[1]; });
+      if (!exposed) return;
+      var c = 1;
+      for (var j = i; j > 0 && P[0].punches[j].t - P[0].punches[j - 1].t <= 0.6; j--) c++;
+      if (c > bestC) { bestC = c; T = pu.t; }
+    });
+    var snap = series.reduce(function (m, s) {
+      return Math.abs(s.t - T) < Math.abs(m.t - T) ? s : m;
+    }, series[0]);
+    function set(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+
+    document.getElementById("hbFillA").style.width = Math.max(2, snap.a) + "%";
+    document.getElementById("hbFillB").style.width = Math.max(2, snap.b) + "%";
+    set("hbNumA", Math.round(snap.a));
+    set("hbNumB", Math.round(snap.b));
+    set("hudTimer", mmss(T));
+    set("hudStamp", mmss(T));
+
+    var recent = P[0].punches.filter(function (x) { return x.t <= T; });
+    var last = recent[recent.length - 1];
+    set("flashN", fmt(last.mph));
+
+    var c = 1;
+    for (var i = recent.length - 1; i > 0; i--) {
+      if (recent[i].t - recent[i - 1].t <= 0.6) c++; else break;
+    }
+    set("comboN", "×" + c);
+
+    var out12 = P[0].punches.filter(function (x) { return x.t > T - 12 && x.t <= T; }).length;
+    var stam = Math.max(12, Math.min(100, 100 - out12 * 11 + Math.round(P[0].fatigue * 180)));
+    var C = 2 * Math.PI * 27;
+    var arc = document.getElementById("staminaArc");
+    arc.setAttribute("stroke-dasharray", (C * stam / 100).toFixed(1) + " " + C.toFixed(1));
+    set("staminaTxt", stam);
+    document.getElementById("staminaSvg").setAttribute("aria-label", "Stamina " + stam + " percent");
+
+    var w = null;
+    P[0].down.forEach(function (d) { if (T >= d[0] && T < d[1]) w = d; });
+    set("exposedTag", w ? "Guard down " + fmt(T - w[0], 1) + " s" : "Guard up");
+    if (!w) document.getElementById("feedWrapA").classList.remove("exposed");
+  })();
+
+  /* ============================================================
+     TOOLTIP + TABLE TOGGLE
+     ============================================================ */
+  (function () {
+    var tip = document.getElementById("tip");
+    function show(el, x, y) {
+      var data;
+      try { data = JSON.parse(el.getAttribute("data-tip")); } catch (e) { return; }
+      tip.textContent = "";
+      var hd = document.createElement("div");
+      hd.className = "t-hd"; hd.textContent = data.hd;
+      tip.appendChild(hd);
+      data.rows.forEach(function (r) {
+        var row = document.createElement("div"); row.className = "t-row";
+        var k = document.createElement("span"); k.className = "t-key";
+        k.style.background = r.c; row.appendChild(k);
+        var v = document.createElement("span"); v.className = "t-val";
+        v.textContent = r.v; row.appendChild(v);
+        var l = document.createElement("span"); l.className = "t-lab";
+        l.textContent = r.l; row.appendChild(l);
+        tip.appendChild(row);
+      });
+      tip.classList.add("on");
+      var b = tip.getBoundingClientRect();
+      var nx = Math.min(window.innerWidth - b.width - 10, Math.max(10, x + 14));
+      var ny = y - b.height - 14;
+      if (ny < 10) ny = y + 20;
+      tip.style.left = nx + "px";
+      tip.style.top = ny + "px";
+    }
+    function hide() { tip.classList.remove("on"); }
+    document.addEventListener("pointerover", function (e) {
+      var el = e.target.closest ? e.target.closest("[data-tip]") : null;
+      if (el) show(el, e.clientX, e.clientY); else hide();
+    });
+    document.addEventListener("pointermove", function (e) {
+      var el = e.target.closest ? e.target.closest("[data-tip]") : null;
+      if (el) show(el, e.clientX, e.clientY);
+    });
+    document.addEventListener("pointerleave", hide);
+    window.addEventListener("scroll", hide, { passive: true });
+
+    var btn = document.getElementById("tableToggle");
+    btn.addEventListener("click", function () {
+      var on = document.documentElement.classList.toggle("show-tables");
+      btn.setAttribute("aria-pressed", String(on));
+      btn.textContent = on ? "Hide data tables" : "Show data tables";
+    });
+  })();
+
+})();
+</script>
+</body>
+</html>
