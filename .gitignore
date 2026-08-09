@@ -1,0 +1,10 @@
+node_modules
+.next
+.env
+.env.local
+.env*.local        # catches .env.production.local, .env.development.local etc — you'll want these eventually
+dist
+.vercel            # vercel CLI drops project linking metadata here, don't commit
+.turbo             # if you ever add Turborepo
+*.tsbuildinfo
+.DS_Store           # if you're on Mac

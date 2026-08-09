@@ -1,0 +1,20 @@
+{
+  "name": "game-mechanics",
+  "version": "1.0.0",
+  "description": "Shared fight logic: pose normalization, punch/block/dodge detection, and authoritative combat resolution. Framework-free TypeScript, consumed as source via the workspace.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.30.2",
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.4"
+  }
+}
