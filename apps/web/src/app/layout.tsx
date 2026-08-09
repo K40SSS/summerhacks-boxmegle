@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Boxmegle",
-  description: "Omegle for boxing. Get matched with a stranger and fight.",
+  description: "Omegle for boxing. 1v1 a stranger!",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

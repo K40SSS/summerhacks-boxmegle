@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { buildEnvironment, buildRing, createBaseScene } from "@/lib/three/ring-builders";
+import {
+  MAT_TOP,
+  buildEnvironment,
+  buildRing,
+  createBaseScene,
+} from "@/lib/three/ring-builders";
 import {
   buildFighter,
   poseFighterIdle,
   type FighterStance,
 } from "@/lib/three/player-builders";
 
-const MAT_TOP = 0.68;
 
 export interface FighterModelProps {
   stance?: FighterStance;

@@ -66,10 +66,6 @@ export default function Home() {
         >
           boxmegle
         </h1>
-        <p className="max-w-sm text-lg leading-6 text-zinc-600">
-          Omegle for boxing. Get matched with a random stranger and fight.
-          Therapy is expensive. This is free lol.
-        </p>
         <form
           onSubmit={handleSubmit}
           className="flex w-full flex-col gap-3 sm:flex-row"
@@ -90,10 +86,6 @@ export default function Home() {
           </button>
         </form>
         {joinError && <p className="text-xs text-red-600">{joinError}</p>}
-        <p className="text-xs text-zinc-400">
-          Mouthguard sold separately. We are not liable for lost teeth or
-          lost pride.
-        </p>
       </main>
       <ServerStatusCard online={matchmakerUp} />
     </div>
