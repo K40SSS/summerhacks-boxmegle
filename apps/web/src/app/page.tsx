@@ -14,27 +14,12 @@ const pixelFont = Press_Start_2P({
 const MATCHMAKER_URL =
   process.env.NEXT_PUBLIC_MATCHMAKER_URL ?? "http://localhost:4000";
 
-const NAME_PLACEHOLDERS = [
-  "Enter your name",
-  "Iron Mike Jr.",
-  "The guy who skips leg day",
-  "Your mom's favorite",
-  "Definitely not a bot",
-];
-
 export default function Home() {
   const router = useRouter();
   const [matchmakerUp, setMatchmakerUp] = useState<boolean | null>(null);
   const [name, setName] = useState("");
-  const [placeholder, setPlaceholder] = useState(NAME_PLACEHOLDERS[0]);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setPlaceholder(
-      NAME_PLACEHOLDERS[Math.floor(Math.random() * NAME_PLACEHOLDERS.length)],
-    );
-  }, []);
 
   useEffect(() => {
     fetch(`${MATCHMAKER_URL}/health`)
@@ -93,7 +78,7 @@ export default function Home() {
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={placeholder}
+            placeholder="Enter your name"
             className="h-12 flex-1 rounded-full border border-zinc-300 bg-white/90 px-5 text-base text-black placeholder-zinc-400 shadow-sm outline-none backdrop-blur focus:border-black"
           />
           <button
