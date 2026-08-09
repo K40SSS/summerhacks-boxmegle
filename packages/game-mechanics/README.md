@@ -23,10 +23,13 @@ raw pose landmarks (MediaPipe Pose, 33 points, unmirrored feed)
 
 - `resolvePunch(punchType, impact, defenderSnapshot, { tired? })` → HIT /
   BLOCKED / GUARD_BREAK / MISS with resulting health/guard values; a tired
-  attacker's punch does half damage
+  attacker's punch is reduced to `tiredDamage(...)`
 - `spendStamina(stamina, punchType)` — every accepted punch spends stamina
   (jab 10 … uppercut 20 from a 100 pool). Punches are NEVER rejected for
-  low stamina: `tired: true` means the punch lands at half power instead.
+  low stamina: `tired: true` means the punch lands as a tap instead. That
+  tap is deliberately weak (20%, floored, minimum 1) — a gassed player can
+  punch at the 4/s cooldown ceiling forever while a paced one is capped
+  near 1/s, so anything more generous makes ignoring stamina optimal.
   After each spend, restart the regen clock for
   `staminaRecoveryDelayMs(newValue)` — 0.5s normally, **1.2s when the spend
   emptied the tank** (winded) — then `regenerateStamina` per tick (25/s;

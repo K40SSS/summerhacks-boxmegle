@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { resolvePunch } from "./combat";
-import { GAME_RULES, PUNCH_STATS } from "./rules";
+import { GAME_RULES, PUNCH_STATS, tiredDamage } from "./rules";
 import { regenerateStamina, spendStamina, staminaRecoveryDelayMs } from "./stamina";
 
 describe("stamina costs", () => {
@@ -28,6 +28,26 @@ describe("stamina costs", () => {
     expect(jabsPerSecond).toBeLessThanOrEqual(1.8);
     expect(hooksPerSecond).toBeGreaterThanOrEqual(0.6);
     expect(hooksPerSecond).toBeLessThanOrEqual(1.2);
+  });
+
+  it("makes pacing out-damage permanent flailing, for every punch type", () => {
+    // The failure mode stamina exists to prevent: a player who never stops
+    // punching sits at zero and throws tired punches at the cooldown ceiling
+    // forever. That must not out-damage a player who paces at the
+    // sustainable rate, or the whole meter is a decoration to be ignored.
+    const spamPerSecond = 1000 / GAME_RULES.globalAttackCooldownMs;
+
+    for (const stats of Object.values(PUNCH_STATS)) {
+      const pacedRate =
+        GAME_RULES.staminaRegenPerSecond /
+        (stats.staminaCost +
+          (GAME_RULES.staminaRegenPerSecond * GAME_RULES.staminaRegenDelayMs) / 1000);
+      const pacedDps = pacedRate * stats.healthDamage;
+      const flailDps = spamPerSecond * tiredDamage(stats.healthDamage);
+      expect(flailDps, `${stats.label} flailing must not beat pacing`).toBeLessThan(
+        pacedDps,
+      );
+    }
   });
 
   it("recovers an empty tank in a beat, not an era", () => {
@@ -93,15 +113,21 @@ describe("tired punches in resolution", () => {
     dodgeOffsetY: 0,
   };
 
-  it("land at half power on health", () => {
+  it("land as taps on health", () => {
     const out = resolvePunch("HOOK", { x: 0, y: -0.7 }, openDefender, { tired: true });
     expect(out.result).toBe("HIT");
-    expect(out.healthDamage).toBe(
-      Math.round(PUNCH_STATS.HOOK.healthDamage * GAME_RULES.tiredPunchDamageMultiplier),
-    );
+    expect(out.healthDamage).toBe(tiredDamage(PUNCH_STATS.HOOK.healthDamage));
+    expect(out.healthDamage).toBeLessThan(PUNCH_STATS.HOOK.healthDamage);
   });
 
-  it("chip the guard at half power too", () => {
+  it("still count for at least 1 damage — the player really swung", () => {
+    for (const type of ["JAB", "CROSS", "HOOK", "UPPERCUT"] as const) {
+      const out = resolvePunch(type, { x: 0, y: -0.7 }, openDefender, { tired: true });
+      expect(out.healthDamage).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("chip the guard, but barely", () => {
     const out = resolvePunch(
       "CROSS",
       { x: 0, y: -0.7 },
@@ -109,9 +135,8 @@ describe("tired punches in resolution", () => {
       { tired: true },
     );
     expect(out.result).toBe("BLOCKED");
-    expect(out.guardDamage).toBe(
-      Math.round(PUNCH_STATS.CROSS.guardDamage * GAME_RULES.tiredPunchDamageMultiplier),
-    );
+    expect(out.guardDamage).toBe(tiredDamage(PUNCH_STATS.CROSS.guardDamage));
+    expect(out.guardDamage).toBeGreaterThanOrEqual(1);
   });
 
   it("a rested attacker is unaffected by the optional parameter", () => {

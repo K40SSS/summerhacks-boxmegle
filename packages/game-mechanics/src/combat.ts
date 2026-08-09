@@ -7,7 +7,7 @@
  * and NEVER damage numbers.
  */
 
-import { GAME_RULES, PUNCH_STATS, clamp, punchMisses } from "./rules";
+import { GAME_RULES, PUNCH_STATS, clamp, punchMisses, tiredDamage } from "./rules";
 import type { PunchType } from "./types";
 
 /** The defender's state at the instant a punch arrives. */
@@ -62,8 +62,8 @@ export interface PunchOutcome {
  * 3. Otherwise the punch lands for its health damage.
  *
  * `attacker.tired` (from spendStamina — the punch could not be fully
- * afforded) scales both health and guard damage by
- * tiredPunchDamageMultiplier: tired punches land, but softly.
+ * afforded) drops both health and guard damage to `tiredDamage`: gassed
+ * punches always land, but as taps.
  */
 export function resolvePunch(
   punchType: PunchType,
@@ -72,9 +72,9 @@ export function resolvePunch(
   attacker?: { tired?: boolean },
 ): PunchOutcome {
   const stats = PUNCH_STATS[punchType];
-  const power = attacker?.tired ? GAME_RULES.tiredPunchDamageMultiplier : 1;
-  const healthDamage = Math.round(stats.healthDamage * power);
-  const guardDamage = Math.round(stats.guardDamage * power);
+  const tired = attacker?.tired === true;
+  const healthDamage = tired ? tiredDamage(stats.healthDamage) : stats.healthDamage;
+  const guardDamage = tired ? tiredDamage(stats.guardDamage) : stats.guardDamage;
 
   if (
     defender.dodging &&

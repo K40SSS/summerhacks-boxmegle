@@ -45,15 +45,23 @@ export const GAME_RULES = {
   // Faster output draws down the bank — a full bar funds a ~10-jab or
   // ~5-hook flurry — and emptying it costs a winded beat (empty → full
   // ≈ 5.2s worst case) without ever locking the player out: tired punches
-  // still land at half power. Burst-and-breathe, not dragged out.
+  // still land, as taps. Burst-and-breathe, not dragged out.
   maxStamina: 100,
   staminaRegenPerSecond: 25,
   /** Regen starts this long after the last spend… */
   staminaRegenDelayMs: 500,
   /** …but takes this long when the spend emptied the tank (winded). */
   staminaWindedDelayMs: 1_200,
-  /** Damage multiplier for punches thrown without enough stamina. */
-  tiredPunchDamageMultiplier: 0.5,
+  /**
+   * Damage multiplier for punches thrown without enough stamina (see
+   * tiredDamage). Deliberately small: staying gassed lets a player punch at
+   * the cooldown ceiling (1000/globalAttackCooldownMs = 4/s) forever, while
+   * a paced player is capped at the sustainable rate above (~1/s), so a
+   * generous multiplier would make ignoring stamina the OPTIMAL strategy.
+   * Pacing only stays worth it while tiredDamage × 4/s ≤ sustainable dps —
+   * the "pacing out-damages permanent flailing" test guards this.
+   */
+  tiredPunchDamageMultiplier: 0.2,
 } as const;
 
 /** Normal attack table. */
@@ -69,6 +77,16 @@ export const PUNCH_STATS: Record<
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Damage a punch deals when thrown without the stamina to pay for it
+ * (`tired` from spendStamina). Rounds DOWN so the multiplier's balance
+ * ceiling holds for every punch, but never below 1: a gassed punch is a tap,
+ * never a no-op — the player really swung.
+ */
+export function tiredDamage(fullDamage: number): number {
+  return Math.max(1, Math.floor(fullDamage * GAME_RULES.tiredPunchDamageMultiplier));
 }
 
 /**
