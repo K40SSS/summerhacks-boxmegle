@@ -49,11 +49,13 @@ export default function Fight() {
       const socket = socketRef.current;
       const now = performance.now();
       if (
+        msg.landmarks &&
         socket?.readyState === WebSocket.OPEN &&
         now - lastPoseSentAtRef.current >= POSE_SEND_INTERVAL_MS
       ) {
         lastPoseSentAtRef.current = now;
-        socket.send(JSON.stringify({ type: "pose", landmarks: msg.landmarks }));
+        socket.send(JSON.stringify({ type: "pose", t: msg.timestamp, lm: msg.landmarks }));
+        socket.send(JSON.stringify({ type: "pose-render", landmarks: msg.landmarks }));
       }
     },
   });
@@ -220,8 +222,8 @@ export default function Fight() {
         router.push("/");
         return;
       }
-      if (typeof data === "object" && data !== null && type === "pose") {
-        remoteLandmarksRef.current = (data as { landmarks: RawLandmark[] | null }).landmarks;
+      if (typeof data === "object" && data !== null && type === "pose-render") {
+        remoteLandmarksRef.current = (data as { landmarks: RawLandmark[] | null }).landmarks ?? null;
         return;
       }
       console.log("game_session message", event.data);
