@@ -1,4 +1,5 @@
 import express from 'express';
+import { gameRouter } from './routes/game';
 
 const app = express();
 const port = process.env.PORT ?? 4000;
@@ -13,6 +14,8 @@ app.use((_req, res, next) => {
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
+
+app.use(gameRouter);
 
 app.listen(port, () => {
   console.log(`server listening on port ${port}`);
