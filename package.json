@@ -2,10 +2,14 @@
   "name": "boxmegle",
   "private": true,
   "scripts": {
+    "dev": "concurrently -n web,server -c blue,green \"pnpm dev:web\" \"pnpm dev:server\"",
     "dev:web": "pnpm --filter web dev",
-    "dev:matchmaker": "pnpm --filter matchmaker dev"
+    "dev:server": "pnpm --filter server dev"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.31.10"
+    "@types/node": "^26.2.0",
+    "concurrently": "^9.1.2",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^7.0.2"
   }
 }
