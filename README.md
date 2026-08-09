@@ -1,4 +1,4 @@
-# fight-game
+# boxmegle
 
 Omegle-style fighting game. Backend repo — matchmaking, DB, and internal API. Frontend/game-mechanics team owns the `ws-server` and fight UI in a separate repo.
 
