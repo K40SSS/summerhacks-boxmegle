@@ -155,10 +155,6 @@ function QueueContent() {
             <span className="text-zinc-400">players in queue</span>
             <span className="text-black">{playersInQueue}</span>
           </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-zinc-400">est. wait</span>
-            <span className="text-black">—</span>
-          </div>
         </div>
 
         {pollFailed && (
