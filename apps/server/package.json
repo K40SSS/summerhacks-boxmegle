@@ -12,6 +12,8 @@
   "license": "ISC",
   "packageManager": "pnpm@10.30.2",
   "dependencies": {
+    "db": "workspace:*",
+    "drizzle-orm": "^0.45.2",
     "express": "^5.1.0",
     "game-mechanics": "workspace:*"
   },

@@ -30,6 +30,8 @@ export default function Home() {
   const [matchmakerUp, setMatchmakerUp] = useState<boolean | null>(null);
   const [name, setName] = useState("");
   const [placeholder] = useState(INITIAL_PLACEHOLDER);
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`${MATCHMAKER_URL}/health`)
@@ -37,10 +39,33 @@ export default function Home() {
       .catch(() => setMatchmakerUp(false));
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TEMP: queue preview only; replace with real matchmaking handoff later
-    router.push("/queue");
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setJoinError("Enter a name first.");
+      return;
+    }
+
+    setJoining(true);
+    setJoinError(null);
+    try {
+      const res = await fetch(`${MATCHMAKER_URL}/queue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.userUuid) {
+        setJoinError(data?.error ?? "Couldn't join the queue.");
+        return;
+      }
+      router.push(`/queue?u=${encodeURIComponent(data.userUuid)}`);
+    } catch {
+      setJoinError("Matchmaker unreachable. Is the server running?");
+    } finally {
+      setJoining(false);
+    }
   };
 
   return (
@@ -70,11 +95,13 @@ export default function Home() {
           />
           <button
             type="submit"
-            className="flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-base font-medium text-white shadow-sm transition-colors hover:bg-zinc-800"
+            disabled={joining}
+            className="flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-base font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Enter!
+            {joining ? "Joining…" : "Enter!"}
           </button>
         </form>
+        {joinError && <p className="text-xs text-red-600">{joinError}</p>}
         <p className="text-xs text-zinc-400">
           Mouthguard sold separately. We are not liable for lost teeth or
           lost pride.
