@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 const MAX_HEALTH = 100;
 const MAX_STAMINA = 100;
 const MAX_BLOCK = 100;
-const BURST_COOLDOWN_S = 12;
 
 function formatClock(totalSeconds: number) {
   const m = Math.floor(totalSeconds / 60);
@@ -46,32 +45,35 @@ function StatusBar({
   );
 }
 
-/**
- * Top status bar (health/stamina/block per player) + burst meter for the
- * fight screen. All values here are mocked locally (no server state yet) so
- * the layout can be wired up before real match state exists.
- */
-export function FightHud() {
-  const [timeLeft, setTimeLeft] = useState(72);
-  const [round] = useState(1);
-  const [leftHealth] = useState(40);
-  const [rightHealth] = useState(46);
-  const [leftStamina] = useState(70);
-  const [rightStamina] = useState(85);
-  const [leftBlock] = useState(100);
-  const [rightBlock] = useState(28);
-  const [burstCharges] = useState(2);
-  const [burstCooldown, setBurstCooldown] = useState(12);
+export interface FightHudProps {
+  you: { health: number; stamina: number; block: number };
+  opponent: { health: number; stamina: number; block: number };
+  timeLeftMs: number;
+  phase: "WAITING" | "FIRST_HALF" | "HALFTIME" | "SECOND_HALF" | "ENDED";
+}
+
+/** Top status bar (health/stamina/block per player) for the fight screen, driven by real match state. */
+export function FightHud({ you, opponent, timeLeftMs, phase }: FightHudProps) {
+  // Locally-mirrored countdown for smooth 1Hz display between server
+  // match-state snapshots. Resyncs whenever a fresh timeLeftMs prop arrives
+  // (the "adjusting state on prop change during render" pattern — no effect
+  // needed for the resync itself), then ticks down once a second in between.
+  const [prevTimeLeftMs, setPrevTimeLeftMs] = useState(timeLeftMs);
+  const [displayMs, setDisplayMs] = useState(timeLeftMs);
+  if (timeLeftMs !== prevTimeLeftMs) {
+    setPrevTimeLeftMs(timeLeftMs);
+    setDisplayMs(timeLeftMs);
+  }
 
   useEffect(() => {
     const id = setInterval(() => {
-      setTimeLeft((t) => (t > 0 ? t - 1 : 0));
-      setBurstCooldown((c) => (c > 0 ? Math.max(0, c - 1) : BURST_COOLDOWN_S));
+      setDisplayMs((ms) => Math.max(0, ms - 1000));
     }, 1000);
     return () => clearInterval(id);
   }, []);
 
-  const burstProgress = burstCooldown / BURST_COOLDOWN_S;
+  const round = phase === "SECOND_HALF" || phase === "ENDED" ? 2 : 1;
+  const roundLabel = phase === "HALFTIME" ? "halftime" : `round ${round}`;
 
   return (
     <>
@@ -96,10 +98,10 @@ export function FightHud() {
               className={`flex flex-col items-center border-2 border-white bg-black/80 px-4 py-1.5 ${PIXEL_SHADOW}`}
             >
               <span className="text-2xl font-bold tabular-nums tracking-widest text-white sm:text-3xl">
-                {formatClock(timeLeft)}
+                {formatClock(Math.ceil(displayMs / 1000))}
               </span>
               <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-yellow-400 sm:text-xs">
-                round {round}
+                {roundLabel}
               </span>
             </div>
           </div>
@@ -122,25 +124,25 @@ export function FightHud() {
           <div className="flex-1 space-y-1.5">
             <div>
               <StatusBar
-                value={leftHealth}
+                value={you.health}
                 max={MAX_HEALTH}
                 colorClass="bg-blue-500"
                 heightClass="h-5 sm:h-6"
                 mirrored={false}
               />
               <span className="mt-1 block font-mono text-lg font-bold text-white sm:text-xl">
-                {leftHealth}
+                {Math.round(you.health)}
               </span>
             </div>
             <StatusBar
-              value={leftStamina}
+              value={you.stamina}
               max={MAX_STAMINA}
               colorClass="bg-emerald-500"
               heightClass="h-2 sm:h-2.5"
               mirrored={false}
             />
             <StatusBar
-              value={leftBlock}
+              value={you.block}
               max={MAX_BLOCK}
               colorClass="bg-yellow-400"
               heightClass="h-2 sm:h-2.5"
@@ -150,69 +152,31 @@ export function FightHud() {
           <div className="flex-1 space-y-1.5">
             <div>
               <StatusBar
-                value={rightHealth}
+                value={opponent.health}
                 max={MAX_HEALTH}
                 colorClass="bg-red-500"
                 heightClass="h-5 sm:h-6"
                 mirrored={true}
               />
               <span className="mt-1 block text-right font-mono text-lg font-bold text-white sm:text-xl">
-                {rightHealth}
+                {Math.round(opponent.health)}
               </span>
             </div>
             <StatusBar
-              value={rightStamina}
+              value={opponent.stamina}
               max={MAX_STAMINA}
               colorClass="bg-emerald-500"
               heightClass="h-2 sm:h-2.5"
               mirrored={true}
             />
             <StatusBar
-              value={rightBlock}
+              value={opponent.block}
               max={MAX_BLOCK}
               colorClass="bg-yellow-400"
               heightClass="h-2 sm:h-2.5"
               mirrored={true}
             />
           </div>
-        </div>
-      </div>
-
-      {/* burst meter, local player */}
-      <div className="absolute bottom-6 left-6 z-10 flex items-center gap-4 font-mono">
-        <div className="text-left">
-          <span className="block text-3xl font-bold text-white sm:text-4xl">
-            ×{burstCharges}
-          </span>
-          <span className="block text-xs font-bold uppercase tracking-[0.3em] text-white/60">
-            burst
-          </span>
-        </div>
-        <div className="relative">
-          <svg width="80" height="80" viewBox="0 0 80 80" className="-rotate-90">
-            <circle
-              cx="40"
-              cy="40"
-              r="34"
-              fill="black"
-              fillOpacity="0.6"
-              stroke="white"
-              strokeWidth="4"
-            />
-            <circle
-              cx="40"
-              cy="40"
-              r="34"
-              fill="none"
-              stroke="#f59e0b"
-              strokeWidth="5"
-              strokeDasharray={2 * Math.PI * 34}
-              strokeDashoffset={2 * Math.PI * 34 * (1 - burstProgress)}
-            />
-          </svg>
-          <span className="absolute inset-0 flex items-center justify-center text-2xl font-bold tabular-nums text-white">
-            {burstCooldown}
-          </span>
         </div>
       </div>
     </>

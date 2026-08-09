@@ -3,10 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Peer, { type MediaConnection } from "peerjs";
-import type { RawLandmark } from "game-mechanics";
+import { GAME_RULES, type RawLandmark } from "game-mechanics";
 import { FightHud } from "@/components/game/FightHud";
 import { PoseOverlay } from "@/components/game/PoseOverlay";
 import { usePoseEngine } from "@/vision/use-pose-engine";
+import type {
+  MatchEndMessage,
+  MatchStateMessage,
+  PlayerStateWire,
+} from "@/vision/matchWire";
+import { LAST_MATCH_KEY, type FighterSummary, type MatchSummary } from "@/lib/match-summary";
 
 /** How often to broadcast local landmarks to the opponent over the game socket. */
 const POSE_SEND_INTERVAL_MS = 100;
@@ -17,6 +23,65 @@ function wsUrl(path: string) {
   const url = new URL(path, MATCHMAKER_URL);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url.toString();
+}
+
+function emptyPunches(): FighterSummary["punches"] {
+  return {
+    JAB: { thrown: 0, landed: 0 },
+    CROSS: { thrown: 0, landed: 0 },
+    HOOK: { thrown: 0, landed: 0 },
+    UPPERCUT: { thrown: 0, landed: 0 },
+  };
+}
+
+/**
+ * The server only tracks health/damageDealt/guardBreaks today; everything
+ * else the summary page wants (peak speed, winded count, guard exposure,
+ * per-punch-type counts, elo, win/loss record) has no source yet, so it's
+ * zeroed/placeholdered here rather than fabricated.
+ */
+function toFighterSummary(
+  player: PlayerStateWire | undefined,
+  corner: FighterSummary["corner"],
+  name: string,
+): FighterSummary {
+  return {
+    name,
+    corner,
+    healthAfter: player?.health ?? 0,
+    damageDealt: player?.damageDealt ?? 0,
+    guardBreaks: player?.guardBreaks ?? 0,
+    timesWinded: 0,
+    peakSpeed: 0,
+    guardExposurePct: 0,
+    punches: emptyPunches(),
+    eloBefore: 1000,
+    eloAfter: 1000,
+    record: { wins: 0, losses: 0 },
+  };
+}
+
+function buildMatchSummary(
+  ended: MatchEndMessage,
+  uuid: string,
+  opponentUuid: string,
+): MatchSummary {
+  const you = ended.players.find((p) => p.playerUuid === uuid);
+  const opponent = ended.players.find((p) => p.playerUuid === opponentUuid);
+  const winner: MatchSummary["winner"] =
+    ended.winnerUuid === null ? null : ended.winnerUuid === uuid ? "you" : "opponent";
+
+  return {
+    durationMs: ended.durationMs,
+    method: ended.reason,
+    winner,
+    // No per-punch event log is tracked client-side yet, so there is no
+    // real "strongest punch" to report — zeroed placeholder.
+    strongestPunch: { type: "JAB", damage: 0, atMs: 0, speed: 0, by: "you" },
+    you: toFighterSummary(you, "blue", "You"),
+    opponent: toFighterSummary(opponent, "red", "Opponent"),
+    narrative: `Match ended by ${ended.reason.toLowerCase()}.`,
+  };
 }
 
 export default function Fight() {
@@ -33,6 +98,7 @@ export default function Fight() {
   const [socketStatus, setSocketStatus] = useState("connecting");
   const socketRef = useRef<WebSocket | null>(null);
   const [localStreamReady, setLocalStreamReady] = useState(false);
+  const [matchState, setMatchState] = useState<MatchStateMessage | null>(null);
 
   // Landmarks live in refs, not state: PoseOverlay reads them on its own
   // rAF loop, so a new frame never triggers a React re-render here.
@@ -226,6 +292,17 @@ export default function Fight() {
         remoteLandmarksRef.current = (data as { landmarks: RawLandmark[] | null }).landmarks ?? null;
         return;
       }
+      if (typeof data === "object" && data !== null && type === "match-state") {
+        setMatchState(data as MatchStateMessage);
+        return;
+      }
+      if (typeof data === "object" && data !== null && type === "match-end") {
+        const ended = data as MatchEndMessage;
+        const summary = buildMatchSummary(ended, uuid, opponentUuid);
+        sessionStorage.setItem(LAST_MATCH_KEY, JSON.stringify(summary));
+        router.push("/summary");
+        return;
+      }
       console.log("game_session message", event.data);
     };
 
@@ -238,6 +315,13 @@ export default function Fight() {
       socketRef.current = null;
     };
   }, [sessionId, uuid, opponentUuid, isHost, router]);
+
+  const youState: PlayerStateWire | undefined = matchState?.players.find(
+    (p) => p.playerUuid === uuid,
+  );
+  const opponentState: PlayerStateWire | undefined = matchState?.players.find(
+    (p) => p.playerUuid === opponentUuid,
+  );
 
   return (
     <div className="fixed inset-0 flex">
@@ -266,7 +350,20 @@ export default function Fight() {
           Opponent
         </span>
       </div>
-      <FightHud />
+      <FightHud
+        you={{
+          health: youState?.health ?? 100,
+          stamina: youState?.stamina ?? 100,
+          block: youState?.block ?? 100,
+        }}
+        opponent={{
+          health: opponentState?.health ?? 100,
+          stamina: opponentState?.stamina ?? 100,
+          block: opponentState?.block ?? 100,
+        }}
+        timeLeftMs={matchState?.timeLeftMs ?? GAME_RULES.firstHalfDurationMs}
+        phase={matchState?.phase ?? "WAITING"}
+      />
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-4 py-1.5 text-center text-[10px] text-white/50 backdrop-blur">
         session: {sessionId} · video: {videoStatus} · game socket:{" "}
         {socketStatus}
