@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Peer, { type MediaConnection } from "peerjs";
+import type { RawLandmark } from "game-mechanics";
+import { PoseOverlay } from "@/components/game/PoseOverlay";
+import { usePoseEngine } from "@/vision/use-pose-engine";
+
+/** How often to broadcast local landmarks to the opponent over the game socket. */
+const POSE_SEND_INTERVAL_MS = 100;
 
 const MATCHMAKER_URL = process.env.NEXT_PUBLIC_MATCHMAKER_URL ?? "http://localhost:4000";
 
@@ -25,6 +31,31 @@ export default function Fight() {
   const [videoStatus, setVideoStatus] = useState("connecting");
   const [socketStatus, setSocketStatus] = useState("connecting");
   const socketRef = useRef<WebSocket | null>(null);
+  const [localStreamReady, setLocalStreamReady] = useState(false);
+
+  // Landmarks live in refs, not state: PoseOverlay reads them on its own
+  // rAF loop, so a new frame never triggers a React re-render here.
+  const localLandmarksRef = useRef<RawLandmark[] | null>(null);
+  const remoteLandmarksRef = useRef<RawLandmark[] | null>(null);
+  const lastPoseSentAtRef = useRef(0);
+
+  usePoseEngine({
+    videoRef: localVideoRef,
+    active: localStreamReady,
+    onPoseResult: (msg) => {
+      localLandmarksRef.current = msg.landmarks;
+
+      const socket = socketRef.current;
+      const now = performance.now();
+      if (
+        socket?.readyState === WebSocket.OPEN &&
+        now - lastPoseSentAtRef.current >= POSE_SEND_INTERVAL_MS
+      ) {
+        lastPoseSentAtRef.current = now;
+        socket.send(JSON.stringify({ type: "pose", landmarks: msg.landmarks }));
+      }
+    },
+  });
 
   const handleLeave = () => {
     const socket = socketRef.current;
@@ -106,6 +137,7 @@ export default function Fight() {
         return;
       }
       if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
+      setLocalStreamReady(true);
 
       const matchmakerUrl = new URL(MATCHMAKER_URL);
       peer = new Peer(peerId, {
@@ -187,11 +219,16 @@ export default function Fight() {
         router.push("/");
         return;
       }
+      if (typeof data === "object" && data !== null && type === "pose") {
+        remoteLandmarksRef.current = (data as { landmarks: RawLandmark[] | null }).landmarks;
+        return;
+      }
       console.log("game_session message", event.data);
     };
 
     return () => {
       cancelled = true;
+      setLocalStreamReady(false);
       localStream?.getTracks().forEach((t) => t.stop());
       peer?.destroy();
       socket.close();
@@ -209,6 +246,7 @@ export default function Fight() {
           muted
           className="h-full w-full object-cover"
         />
+        <PoseOverlay videoRef={localVideoRef} landmarksRef={localLandmarksRef} />
         <span className="absolute bottom-4 left-4 text-xs font-medium text-white/70">
           You
         </span>
@@ -220,6 +258,7 @@ export default function Fight() {
           playsInline
           className="h-full w-full object-cover"
         />
+        <PoseOverlay videoRef={remoteVideoRef} landmarksRef={remoteLandmarksRef} />
         <span className="absolute bottom-4 right-4 text-xs font-medium text-white/70">
           Opponent
         </span>
