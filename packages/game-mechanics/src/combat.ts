@@ -7,7 +7,7 @@
  * and NEVER damage numbers.
  */
 
-import { GAME_RULES, PUNCH_STATS, clamp, punchMisses } from "./rules";
+import { GAME_RULES, PUNCH_STATS, clamp, punchMisses, tiredDamage } from "./rules";
 import type { PunchType } from "./types";
 
 /** The defender's state at the instant a punch arrives. */
@@ -60,13 +60,21 @@ export interface PunchOutcome {
  *    breaks the guard and stuns (the breaking punch deals no health damage —
  *    the break itself is the opening).
  * 3. Otherwise the punch lands for its health damage.
+ *
+ * `attacker.tired` (from spendStamina — the punch could not be fully
+ * afforded) drops both health and guard damage to `tiredDamage`: gassed
+ * punches always land, but as taps.
  */
 export function resolvePunch(
   punchType: PunchType,
   impact: { x: number; y: number },
   defender: DefenderSnapshot,
+  attacker?: { tired?: boolean },
 ): PunchOutcome {
   const stats = PUNCH_STATS[punchType];
+  const tired = attacker?.tired === true;
+  const healthDamage = tired ? tiredDamage(stats.healthDamage) : stats.healthDamage;
+  const guardDamage = tired ? tiredDamage(stats.guardDamage) : stats.guardDamage;
 
   if (
     defender.dodging &&
@@ -85,22 +93,22 @@ export function resolvePunch(
   }
 
   if (defender.blocking && !defender.stunned) {
-    const blockAfter = clamp(defender.block - stats.guardDamage, 0, GAME_RULES.maxBlock);
+    const blockAfter = clamp(defender.block - guardDamage, 0, GAME_RULES.maxBlock);
     const broke = blockAfter <= 0;
     return {
       result: broke ? "GUARD_BREAK" : "BLOCKED",
       healthDamage: 0,
-      guardDamage: stats.guardDamage,
+      guardDamage,
       defenderHealthAfter: defender.health,
       defenderBlockAfter: blockAfter,
       stunsDefender: broke,
     };
   }
 
-  const healthAfter = clamp(defender.health - stats.healthDamage, 0, GAME_RULES.maxHealth);
+  const healthAfter = clamp(defender.health - healthDamage, 0, GAME_RULES.maxHealth);
   return {
     result: "HIT",
-    healthDamage: stats.healthDamage,
+    healthDamage,
     guardDamage: 0,
     defenderHealthAfter: healthAfter,
     defenderBlockAfter: defender.block,
