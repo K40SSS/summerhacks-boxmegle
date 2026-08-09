@@ -10,3 +10,10 @@ if (!process.env.DATABASE_URL) {
   );
   process.exit(1);
 }
+
+export const allowedOrigins = (
+  process.env.ALLOWED_ORIGINS ?? "http://localhost:3000"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
