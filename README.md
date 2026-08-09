@@ -20,6 +20,10 @@ packages/
   db/           # shared Drizzle schema + client, used by both apps
 ```
 
+## Design
+
+![System design](docs/system-design.png)
+
 ## Prerequisites
 
 - Node 20+
