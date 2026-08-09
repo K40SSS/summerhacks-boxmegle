@@ -3,6 +3,7 @@ import http from "http";
 import express from "express";
 import { gameRouter } from "./routes/game";
 import { queueRouter, startMatchmakerWorker } from "./routes/queue";
+import { turnRouter } from "./routes/turn";
 import { createPeerServer } from "./peer";
 import { gameSocketServer } from "./ws/gameSession";
 
@@ -41,6 +42,7 @@ app.get("/health", (_req, res) => {
 app.use("/peerjs", peerServer);
 app.use(gameRouter);
 app.use(queueRouter);
+app.use(turnRouter);
 
 // Both peer signaling and game-state websockets share this single
 // httpServer/port; we dispatch the one 'upgrade' event by path ourselves.

@@ -25,6 +25,22 @@ function wsUrl(path: string) {
   return url.toString();
 }
 
+/**
+ * Cross-network calls (different NATs/networks) usually can't connect
+ * peer-to-peer and need a TURN relay. Falls back to PeerJS's default
+ * (unreliable, public) TURN servers if this fetch fails.
+ */
+async function fetchIceServers(): Promise<RTCIceServer[] | null> {
+  try {
+    const res = await fetch(new URL("/turn-credentials", MATCHMAKER_URL));
+    if (!res.ok) return null;
+    const data = (await res.json()) as { iceServers: RTCIceServer[] };
+    return data.iceServers;
+  } catch {
+    return null;
+  }
+}
+
 function emptyPunches(): FighterSummary["punches"] {
   return {
     JAB: { thrown: 0, landed: 0 },
@@ -217,6 +233,7 @@ function FightPage() {
       setLocalStreamReady(true);
 
       const matchmakerUrl = new URL(MATCHMAKER_URL);
+      const iceServers = await fetchIceServers();
       peer = new Peer(peerId, {
         host: matchmakerUrl.hostname,
         port: matchmakerUrl.port
@@ -226,6 +243,7 @@ function FightPage() {
             : 80,
         path: "/peerjs",
         secure: matchmakerUrl.protocol === "https:",
+        ...(iceServers ? { config: { iceServers } } : {}),
       });
 
       const handleCall = (call: MediaConnection) => {
