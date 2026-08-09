@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Peer, { type MediaConnection } from "peerjs";
 
-const MATCHMAKER_URL =
-  process.env.NEXT_PUBLIC_MATCHMAKER_URL ?? "http://localhost:4000";
+const MATCHMAKER_URL = process.env.NEXT_PUBLIC_MATCHMAKER_URL ?? "http://localhost:4000";
 
 function wsUrl(path: string) {
   const url = new URL(path, MATCHMAKER_URL);
@@ -14,6 +13,7 @@ function wsUrl(path: string) {
 }
 
 export default function Fight() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session");
   const uuid = searchParams.get("uuid");
@@ -24,6 +24,15 @@ export default function Fight() {
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const [videoStatus, setVideoStatus] = useState("connecting");
   const [socketStatus, setSocketStatus] = useState("connecting");
+  const socketRef = useRef<WebSocket | null>(null);
+
+  const handleLeave = () => {
+    const socket = socketRef.current;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "leave" }));
+    }
+    router.push("/");
+  };
 
   useEffect(() => {
     if (!sessionId || !uuid || !opponentUuid) return;
@@ -31,15 +40,67 @@ export default function Fight() {
     let cancelled = false;
     let peer: Peer | null = null;
     let localStream: MediaStream | null = null;
+    let peerOpen = false;
+    let opponentReady = false;
 
     const peerId = `${sessionId}-${uuid}`;
     const opponentPeerId = `${sessionId}-${opponentUuid}`;
+    const t0 = performance.now();
+    const elapsed = () => `${Math.round(performance.now() - t0)}ms`;
+    const plog = (...args: unknown[]) => console.log(`[peerjs:${uuid} +${elapsed()}]`, ...args);
+
+    const socket = new WebSocket(
+      wsUrl(`/game_session?sessionId=${sessionId}&playerUuid=${uuid}`),
+    );
+    socketRef.current = socket;
+
+    const sendReady = () => {
+      if (socket.readyState === WebSocket.OPEN) {
+        plog("sending peer-ready over game socket");
+        socket.send(JSON.stringify({ type: "peer-ready" }));
+      } else {
+        plog("sendReady skipped, socket not open yet, readyState =", socket.readyState);
+      }
+    };
+
+    // Logs ICE/connection state transitions on the underlying RTCPeerConnection
+    // so a stalled negotiation (no TURN, blocked UDP, etc.) is visible instead
+    // of silently sitting at "connecting" forever.
+    const attachCallLogging = (call: MediaConnection, direction: "outgoing" | "incoming") => {
+      plog(`${direction} call created ->`, call.peer);
+      call.on("stream", (remoteStream) => {
+        plog(`${direction} call: stream received`, remoteStream.getTracks().map((t) => t.kind));
+      });
+      call.on("close", () => plog(`${direction} call: closed`));
+      call.on("error", (err) => plog(`${direction} call: error`, err));
+      const pc = call.peerConnection;
+      if (pc) {
+        pc.addEventListener("iceconnectionstatechange", () =>
+          plog(`${direction} call: iceConnectionState =`, pc.iceConnectionState),
+        );
+        pc.addEventListener("connectionstatechange", () =>
+          plog(`${direction} call: connectionState =`, pc.connectionState),
+        );
+      }
+    };
+
+    const maybeCallOpponent = () => {
+      if (!isHost || !localStream || !peer || !peerOpen || !opponentReady) return;
+      plog("placing call to", opponentPeerId);
+      const call = peer.call(opponentPeerId, localStream);
+      attachCallLogging(call, "outgoing");
+      call.on("stream", (remoteStream) => {
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
+        setVideoStatus("connected");
+      });
+    };
 
     const setupPeer = async () => {
       localStream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true,
       });
+      plog("local media ready");
       if (cancelled) {
         localStream.getTracks().forEach((t) => t.stop());
         return;
@@ -55,7 +116,9 @@ export default function Fight() {
       });
 
       const handleCall = (call: MediaConnection) => {
+        plog("incoming call from", call.peer);
         call.answer(localStream!);
+        attachCallLogging(call, "incoming");
         call.on("stream", (remoteStream) => {
           if (remoteVideoRef.current)
             remoteVideoRef.current.srcObject = remoteStream;
@@ -65,18 +128,22 @@ export default function Fight() {
 
       peer.on("call", handleCall);
 
-      peer.on("open", () => {
-        if (isHost && localStream) {
-          const call = peer!.call(opponentPeerId, localStream);
-          call.on("stream", (remoteStream) => {
-            if (remoteVideoRef.current)
-              remoteVideoRef.current.srcObject = remoteStream;
-            setVideoStatus("connected");
-          });
-        }
+      // Peer being "open" only means our own id is registered with the
+      // PeerJS signaling server, not that the opponent's is. Announce
+      // readiness over the game socket and wait for theirs before calling,
+      // otherwise a call placed before the opponent registers fails silently.
+      peer.on("open", (id) => {
+        plog("peer open, registered as", id);
+        peerOpen = true;
+        sendReady();
+        maybeCallOpponent();
       });
 
+      peer.on("disconnected", () => plog("peer disconnected from signaling server"));
+      peer.on("close", () => plog("peer closed"));
+
       peer.on("error", (err) => {
+        plog("peer error", err.type, err.message);
         console.error("peer error", err);
         setVideoStatus("error");
       });
@@ -87,13 +154,39 @@ export default function Fight() {
       setVideoStatus("error");
     });
 
-    const socket = new WebSocket(
-      wsUrl(`/game_session?sessionId=${sessionId}&playerUuid=${uuid}`),
-    );
-    socket.onopen = () => setSocketStatus("connected");
-    socket.onclose = () => setSocketStatus("disconnected");
-    socket.onerror = () => setSocketStatus("error");
+    plog("game socket connecting to", socket.url);
+    socket.onopen = () => {
+      plog("game socket open");
+      setSocketStatus("connected");
+      if (peerOpen) sendReady();
+    };
+    socket.onclose = (event) => {
+      plog("game socket closed", { code: event.code, reason: event.reason });
+      setSocketStatus("disconnected");
+    };
+    socket.onerror = () => {
+      plog("game socket error");
+      setSocketStatus("error");
+    };
     socket.onmessage = (event) => {
+      let data: unknown;
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        console.log("game_session message", event.data);
+        return;
+      }
+      const type = (data as { type?: unknown }).type;
+      if (typeof data === "object" && data !== null && type === "peer-ready") {
+        plog("received opponent peer-ready");
+        opponentReady = true;
+        maybeCallOpponent();
+        return;
+      }
+      if (typeof data === "object" && data !== null && type === "leave") {
+        router.push("/");
+        return;
+      }
       console.log("game_session message", event.data);
     };
 
@@ -102,8 +195,9 @@ export default function Fight() {
       localStream?.getTracks().forEach((t) => t.stop());
       peer?.destroy();
       socket.close();
+      socketRef.current = null;
     };
-  }, [sessionId, uuid, opponentUuid, isHost]);
+  }, [sessionId, uuid, opponentUuid, isHost, router]);
 
   return (
     <div className="fixed inset-0 flex">
@@ -134,6 +228,13 @@ export default function Fight() {
         session: {sessionId} · video: {videoStatus} · game socket:{" "}
         {socketStatus}
       </div>
+      <button
+        type="button"
+        onClick={handleLeave}
+        className="absolute bottom-4 right-4 rounded-full bg-black/60 px-5 py-2 text-xs font-medium uppercase tracking-widest text-white/80 backdrop-blur transition-colors hover:bg-red-600/80 hover:text-white"
+      >
+        Leave game
+      </button>
     </div>
   );
 }

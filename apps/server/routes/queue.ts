@@ -1,10 +1,15 @@
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
-import { asc, count, desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, lt, ne, or } from "drizzle-orm";
 import { db } from "db/client";
 import { gameSessions, publicQueue, users } from "db/schema";
 
 const PAIR_INTERVAL_MS = 1000;
+// The queue page polls /queue/status every 1500ms and that refreshes
+// lastSeenAt. A tab closed, refreshed, or navigated away without hitting
+// /queue/leave stops refreshing it -- prune it so it can't get matched
+// against a client that no longer exists, stranding the real opponent.
+const PRUNE_STALE_MS = 8000;
 const NAME_MAX_LENGTH = 24;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -56,22 +61,35 @@ queueRouter.get("/queue/status", async (req, res) => {
       .select()
       .from(gameSessions)
       .where(
-        or(
-          eq(gameSessions.player1Uuid, userUuid),
-          eq(gameSessions.player2Uuid, userUuid),
+        and(
+          or(
+            eq(gameSessions.player1Uuid, userUuid),
+            eq(gameSessions.player2Uuid, userUuid),
+          ),
+          ne(gameSessions.status, "completed"),
         ),
       )
       .orderBy(desc(gameSessions.createdAt))
       .limit(1);
 
     if (session) {
+      const isHost = session.player1Uuid === userUuid;
       res.json({
         matched: true,
         sessionId: session.id,
-        isHost: session.player1Uuid === userUuid,
+        isHost,
+        opponentUuid: isHost ? session.player2Uuid : session.player1Uuid,
       });
       return;
     }
+
+    // A tab that's polling is still around; refresh its heartbeat so the
+    // matchmaker doesn't sweep it as abandoned (see PRUNE_STALE_MS below).
+    // No-op if the row was already deleted (e.g. it just got paired).
+    await db
+      .update(publicQueue)
+      .set({ lastSeenAt: new Date() })
+      .where(eq(publicQueue.userUuid, userUuid));
 
     const [{ total }] = await db.select({ total: count() }).from(publicQueue);
     const queue = await db
@@ -109,6 +127,10 @@ queueRouter.post("/queue/leave", async (req, res) => {
 
 async function pairPlayers() {
   try {
+    await db
+      .delete(publicQueue)
+      .where(lt(publicQueue.lastSeenAt, new Date(Date.now() - PRUNE_STALE_MS)));
+
     await db.transaction(async (tx) => {
       const rows = await tx
         .select()

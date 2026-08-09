@@ -13,7 +13,21 @@ export function createPeerServer(httpServer: Server) {
   const peerServer = ExpressPeerServer(httpServer, {
     path: '/',
     allow_discovery: false,
+    proxied: true,
     createWebSocketServer: () => peerSocketServer,
+  });
+
+  peerServer.on('connection', (client) => {
+    console.log(`[peer] connected: ${client.getId()}`);
+  });
+  peerServer.on('disconnect', (client) => {
+    console.log(`[peer] disconnected: ${client.getId()}`);
+  });
+  peerServer.on('message', (client, message) => {
+    console.log(`[peer] message ${message.type} ${client.getId()} -> ${message.dst}`);
+  });
+  peerServer.on('error', (err) => {
+    console.error('[peer] server error', err);
   });
 
   return { peerServer, peerSocketServer };
