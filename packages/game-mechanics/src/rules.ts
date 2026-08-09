@@ -38,17 +38,33 @@ export const GAME_RULES = {
   dodgeDuckImpactY: -0.5,
   /** A dodge cannot be held longer than this — enforced on BOTH sides. */
   dodgeMaxHoldMs: 900,
+
+  // Stamina: every punch spends from a 100-point pool. Because each spend
+  // restarts the regen-delay clock, the steady sustainable rate is
+  // regen / (cost + regen × delay): ~1.1 jabs/s or ~0.8 hooks/s forever.
+  // Faster output draws down the bank — a full bar funds a ~10-jab or
+  // ~5-hook flurry — and emptying it costs a winded beat (empty → full
+  // ≈ 5.2s worst case) without ever locking the player out: tired punches
+  // still land at half power. Burst-and-breathe, not dragged out.
+  maxStamina: 100,
+  staminaRegenPerSecond: 25,
+  /** Regen starts this long after the last spend… */
+  staminaRegenDelayMs: 500,
+  /** …but takes this long when the spend emptied the tank (winded). */
+  staminaWindedDelayMs: 1_200,
+  /** Damage multiplier for punches thrown without enough stamina. */
+  tiredPunchDamageMultiplier: 0.5,
 } as const;
 
 /** Normal attack table. */
 export const PUNCH_STATS: Record<
   PunchType,
-  { healthDamage: number; guardDamage: number; label: string }
+  { healthDamage: number; guardDamage: number; staminaCost: number; label: string }
 > = {
-  JAB: { healthDamage: 4, guardDamage: 12, label: "Jab" },
-  CROSS: { healthDamage: 6, guardDamage: 16, label: "Cross" },
-  HOOK: { healthDamage: 8, guardDamage: 20, label: "Hook" },
-  UPPERCUT: { healthDamage: 9, guardDamage: 22, label: "Uppercut" },
+  JAB: { healthDamage: 4, guardDamage: 12, staminaCost: 10, label: "Jab" },
+  CROSS: { healthDamage: 6, guardDamage: 16, staminaCost: 14, label: "Cross" },
+  HOOK: { healthDamage: 8, guardDamage: 20, staminaCost: 18, label: "Hook" },
+  UPPERCUT: { healthDamage: 9, guardDamage: 22, staminaCost: 20, label: "Uppercut" },
 };
 
 export function clamp(value: number, min: number, max: number): number {

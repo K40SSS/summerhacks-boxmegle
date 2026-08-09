@@ -1,5 +1,5 @@
 /**
- * @shadowduel/boxing-mechanics — camera shadowboxing mechanics.
+ * game-mechanics — camera shadowboxing fight logic.
  *
  * Pipeline (client side, per camera frame):
  *   raw pose landmarks
@@ -10,8 +10,9 @@
  *     → DetectedAction events  (semantic — never damage numbers)
  *
  * Resolution (server side, authoritative):
- *   resolvePunch() / drainBlock() / regenerateBlock() / decideWinner()
- *   plus the shared GAME_RULES / PUNCH_STATS constants.
+ *   resolvePunch() / spendStamina() / drainBlock() / regenerateBlock() /
+ *   regenerateStamina() / decideWinner() plus the shared GAME_RULES /
+ *   PUNCH_STATS constants.
  */
 
 export * from "./types";
@@ -51,3 +52,9 @@ export {
   type PunchOutcome,
   type PunchResult,
 } from "./combat";
+export {
+  regenerateStamina,
+  spendStamina,
+  staminaRecoveryDelayMs,
+  type SpendOutcome,
+} from "./stamina";
