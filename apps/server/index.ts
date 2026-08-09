@@ -57,7 +57,7 @@ httpServer.on("upgrade", (req, socket, head) => {
   socket.destroy();
 });
 
-httpServer.listen(port, () => {
+httpServer.listen(port, "0.0.0.0", () => {
   console.log(`server listening on port ${port}`);
   startMatchmakerWorker();
 });

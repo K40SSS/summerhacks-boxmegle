@@ -8,3 +8,4 @@ dist
 .turbo             # if you ever add Turborepo
 *.tsbuildinfo
 .DS_Store           # if you're on Mac
+.vercel
