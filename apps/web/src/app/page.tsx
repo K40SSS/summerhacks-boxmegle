@@ -1,13 +1,36 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Press_Start_2P } from "next/font/google";
 import { ServerStatusCard } from "@/components/ui/ServerStatusCard";
+import { LandingBackground } from "@/components/landing/LandingBackground";
+
+const pixelFont = Press_Start_2P({
+  weight: "400",
+  subsets: ["latin"],
+});
 
 const MATCHMAKER_URL =
   process.env.NEXT_PUBLIC_MATCHMAKER_URL ?? "http://localhost:4000";
 
+const NAME_PLACEHOLDERS = [
+  "Enter your name",
+  "Iron Mike Jr.",
+  "The guy who skips leg day",
+  "Your mom's favorite",
+  "Definitely not a bot",
+];
+
 export default function Home() {
   const [matchmakerUp, setMatchmakerUp] = useState<boolean | null>(null);
+  const [name, setName] = useState("");
+  const [placeholder, setPlaceholder] = useState(NAME_PLACEHOLDERS[0]);
+
+  useEffect(() => {
+    setPlaceholder(
+      NAME_PLACEHOLDERS[Math.floor(Math.random() * NAME_PLACEHOLDERS.length)],
+    );
+  }, []);
 
   useEffect(() => {
     fetch(`${MATCHMAKER_URL}/health`)
@@ -15,29 +38,47 @@ export default function Home() {
       .catch(() => setMatchmakerUp(false));
   }, []);
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // TODO: hand off to matchmaking flow
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <span className="text-lg font-semibold tracking-tight text-black dark:text-zinc-50">
-          Boxmegle
-        </span>
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            Omegle for boxing.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Get matched with a random stranger and fight. No sign-up, no
-            names, just you and whoever&apos;s next in the queue.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="#"
+    <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden font-sans">
+      <LandingBackground />
+      <main className="relative z-10 flex w-full max-w-md flex-col items-center gap-10 px-6 py-32 text-center">
+        <h1
+          className={`${pixelFont.className} text-4xl leading-relaxed tracking-tight text-black [image-rendering:pixelated] sm:text-6xl`}
+          style={{ textShadow: "3px 3px 0 rgba(0,0,0,0.15)" }}
+        >
+          boxmegle
+        </h1>
+        <p className="max-w-sm text-lg leading-6 text-zinc-600">
+          Omegle for boxing. Get matched with a random stranger and fight.
+          Therapy is expensive. This is free lol.
+        </p>
+        <form
+          onSubmit={handleSubmit}
+          className="flex w-full flex-col gap-3 sm:flex-row"
+        >
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={placeholder}
+            className="h-12 flex-1 rounded-full border border-zinc-300 bg-white/90 px-5 text-base text-black placeholder-zinc-400 shadow-sm outline-none backdrop-blur focus:border-black"
+          />
+          <button
+            type="submit"
+            className="flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-base font-medium text-white shadow-sm transition-colors hover:bg-zinc-800"
           >
-            Start fighting
-          </a>
-        </div>
+            Enter!
+          </button>
+        </form>
+        <p className="text-xs text-zinc-400">
+          Mouthguard sold separately. We are not liable for lost teeth or
+          lost pride.
+        </p>
       </main>
       <ServerStatusCard online={matchmakerUp} />
     </div>
