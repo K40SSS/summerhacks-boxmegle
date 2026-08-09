@@ -288,7 +288,8 @@ export function buildFighter(options: FighterOptions = {}): Fighter {
 const ease = (u: number) => u * u * (3 - 2 * u);
 
 /**
- * Shadowboxing idle: bob, guard sway, and a lead jab every few seconds.
+ * Shadowboxing idle: bob, guard sway, and a straight punch every few
+ * seconds, alternating between the lead jab and the rear cross.
  * Call once per frame with seconds since the scene started.
  */
 export function poseFighterIdle(fighter: Fighter, t: number): void {
@@ -300,6 +301,8 @@ export function poseFighterIdle(fighter: Fighter, t: number): void {
   const leadRoll = lead === "left" ? j.leftShoulderRoll : j.rightShoulderRoll;
   const leadElbow = lead === "left" ? j.leftElbow : j.rightElbow;
   const rearShoulder = lead === "left" ? j.rightShoulder : j.leftShoulder;
+  const rearRoll = lead === "left" ? j.rightShoulderRoll : j.leftShoulderRoll;
+  const rearElbow = lead === "left" ? j.rightElbow : j.leftElbow;
 
   const bounce = Math.sin(t * 2.6);
   j.body.position.y = (j.body.userData.baseY as number) + bounce * 0.022;
@@ -313,15 +316,23 @@ export function poseFighterIdle(fighter: Fighter, t: number): void {
   leadElbow.rotation.x = GUARD.elbowFold + Math.sin(t * 2.6 - 0.3) * 0.05;
   leadRoll.rotation.y = leadSide * GUARD.shoulderRoll;
 
-  // Jab on a 3.2s cycle: snap out over a quarter of a second, drift back.
+  // Punch on a 3.2s cycle: snap out over a quarter of a second, drift back.
+  // Odd cycles throw the lead jab; even cycles the rear cross.
+  const cycle = Math.floor(t / 3.2);
   const phase = (t % 3.2) / 3.2;
   const punch =
     phase < 0.08 ? ease(phase / 0.08) : phase < 0.34 ? 1 - ease((phase - 0.08) / 0.26) : 0;
   if (punch > 0) {
-    leadShoulder.rotation.x = GUARD.shoulderPitch - punch * 0.72;
-    leadElbow.rotation.x = GUARD.elbowFold * (1 - punch * 0.94);
-    // Unwind the inward roll, or the jab curls across the body.
-    leadRoll.rotation.y = leadSide * GUARD.shoulderRoll * (1 - punch);
+    const isLead = cycle % 2 === 0;
+    const shoulder = isLead ? leadShoulder : rearShoulder;
+    const elbow = isLead ? leadElbow : rearElbow;
+    const roll = isLead ? leadRoll : rearRoll;
+    const side = isLead ? leadSide : -leadSide;
+    shoulder.rotation.x = GUARD.shoulderPitch - punch * 0.72;
+    elbow.rotation.x = GUARD.elbowFold * (1 - punch * 0.94);
+    // Unwind the inward roll, or the punch curls across the body.
+    roll.rotation.y = side * GUARD.shoulderRoll * (1 - punch);
+    // Same hip turn for the jab and the cross — only the hand changes.
     j.body.rotation.y -= mirror * punch * 0.22;
     j.chest.rotation.x -= punch * 0.06;
   }

@@ -30,3 +30,30 @@ body {
 .animate-queue-scan {
   animation: queue-scan 2.4s ease-in-out infinite;
 }
+
+@keyframes countdown-ring {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: var(--ring-circumference);
+  }
+}
+
+.animate-countdown-ring {
+  animation: countdown-ring 1s linear forwards;
+}
+
+@keyframes duck-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(2deg);
+  }
+}
+
+.animate-duck-bob {
+  animation: duck-bob 1.6s ease-in-out infinite;
+}

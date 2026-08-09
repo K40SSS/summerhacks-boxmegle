@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Press_Start_2P } from "next/font/google";
-import { QueueBackground } from "@/components/queue/QueueBackground";
+import { FighterModel } from "@/components/fighter/FighterModel";
 import { ServerStatusCard } from "@/components/ui/ServerStatusCard";
 
 const pixelFont = Press_Start_2P({
@@ -116,7 +116,7 @@ function QueueContent() {
 
   return (
     <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden font-sans">
-      <QueueBackground />
+      <FighterModel withRing className="fixed inset-0 -z-10" />
 
       <header className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-6 py-5 sm:px-10">
         <span
