@@ -332,8 +332,8 @@ export function poseFighterIdle(fighter: Fighter, t: number): void {
     elbow.rotation.x = GUARD.elbowFold * (1 - punch * 0.94);
     // Unwind the inward roll, or the punch curls across the body.
     roll.rotation.y = side * GUARD.shoulderRoll * (1 - punch);
-    // The rear cross digs in with the hips; the lead jab just tags.
-    j.body.rotation.y -= mirror * punch * (isLead ? 0.22 : 0.4);
+    // Same hip turn for the jab and the cross — only the hand changes.
+    j.body.rotation.y -= mirror * punch * 0.22;
     j.chest.rotation.x -= punch * 0.06;
   }
 }
