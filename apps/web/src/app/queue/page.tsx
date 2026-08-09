@@ -25,6 +25,10 @@ type QueueStatus =
     }
   | { matched: false; playersInQueue: number; queuePosition: number | null };
 
+function formatElapsed(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 function AnimatedEllipsis() {
   const [dots, setDots] = useState(".");
 
@@ -45,11 +49,19 @@ function QueueContent() {
   const [matchmakerUp, setMatchmakerUp] = useState<boolean | null>(null);
   const [status, setStatus] = useState<QueueStatus | null>(null);
   const [pollFailed, setPollFailed] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     fetch(`${MATCHMAKER_URL}/health`)
       .then((res) => setMatchmakerUp(res.ok))
       .catch(() => setMatchmakerUp(false));
+  }, []);
+
+  // A moving clock is the one honest signal here: there is no ETA to give,
+  // but "how long have I been waiting" is what the question really is.
+  useEffect(() => {
+    const id = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -113,6 +125,10 @@ function QueueContent() {
   if (!userUuid) return null;
 
   const playersInQueue = status && !status.matched ? status.playersInQueue : "—";
+  const queuePosition =
+    status && !status.matched && status.queuePosition !== null
+      ? `#${status.queuePosition}`
+      : "—";
 
   return (
     <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden font-sans">
@@ -124,61 +140,70 @@ function QueueContent() {
         >
           boxmegle
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+        <span className="font-mono text-xs font-medium uppercase tracking-widest text-zinc-700">
           public queue
         </span>
       </header>
 
-      <main className="relative z-10 flex w-full max-w-xl flex-col items-center gap-9 px-6 py-24 text-center">
-        <p className="font-mono text-xs uppercase tracking-[0.3em] text-zinc-500">
-          {"// status: awaiting opponent"}
-        </p>
+      <main className="relative z-10 flex w-full max-w-xl flex-col items-center px-6 py-24 text-center">
+        {/* Everything readable lives in one lightly tinted panel. No blur, so
+            the ring stays visible through it — the text carries its own
+            contrast instead (black headings, zinc-800 labels). */}
+        <div className="flex w-full flex-col items-center gap-6 rounded-2xl border border-black/10 bg-white/40 px-8 py-8 shadow-sm">
+          <h1 className="text-4xl font-bold uppercase leading-tight tracking-tight text-black sm:text-6xl">
+            Searching for
+            <br />
+            opponent
+          </h1>
 
-        <h1 className="text-4xl font-bold uppercase leading-tight tracking-tight text-black sm:text-6xl">
-          Searching for
-          <br />
-          opponent
-        </h1>
-
-        <div className="flex flex-col items-center gap-4">
-          <p className="font-mono text-sm uppercase tracking-widest text-zinc-600">
-            scanning the void
-            <AnimatedEllipsis />
-          </p>
-          <div className="relative h-1 w-60 overflow-hidden rounded-none bg-zinc-200">
-            <div className="animate-queue-scan absolute top-0 left-0 h-full w-1/3 bg-black" />
+          <div className="flex w-full max-w-md flex-col items-center gap-3">
+            <p className="font-mono text-sm font-semibold uppercase tracking-widest text-zinc-800">
+              scanning the void
+              <AnimatedEllipsis />
+            </p>
+            <div className="relative h-3 w-full overflow-hidden rounded-full border border-black/25 bg-white/70">
+              <div className="animate-queue-scan absolute inset-y-0 left-0 w-2/5 rounded-full bg-black" />
+            </div>
           </div>
+
+          <div className="flex w-full items-start justify-center gap-8 border-t border-black/10 pt-6 font-mono text-xs uppercase tracking-widest sm:gap-12">
+            <div className="flex flex-col gap-1.5">
+              <span className="font-medium text-zinc-800">in queue</span>
+              <span className="text-lg font-bold normal-case tracking-normal text-black">
+                {playersInQueue}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className="font-medium text-zinc-800">your position</span>
+              <span className="text-lg font-bold normal-case tracking-normal text-black">
+                {queuePosition}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className="font-medium text-zinc-800">searching</span>
+              <span className="text-lg font-bold normal-case tracking-normal tabular-nums text-black">
+                {formatElapsed(elapsed)}
+              </span>
+            </div>
+          </div>
+
+          {pollFailed && (
+            <p
+              role="alert"
+              className="font-mono text-sm font-semibold uppercase tracking-widest text-red-700"
+            >
+              lost connection to matchmaker — still trying
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={handleLeave}
+            className="rounded-sm border-2 border-black bg-white/60 px-10 py-3 font-mono text-sm font-semibold uppercase tracking-widest text-black transition-colors hover:bg-black hover:text-white"
+          >
+            Leave queue
+          </button>
         </div>
-
-        <div className="flex items-center gap-10 font-mono text-xs uppercase tracking-widest text-zinc-500">
-          <div className="flex flex-col gap-1">
-            <span className="text-zinc-400">players in queue</span>
-            <span className="text-black">{playersInQueue}</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-zinc-400">est. wait</span>
-            <span className="text-black">—</span>
-          </div>
-        </div>
-
-        {pollFailed && (
-          <p className="font-mono text-xs uppercase tracking-widest text-red-600">
-            lost connection to matchmaker — still trying
-          </p>
-        )}
-
-        <button
-          type="button"
-          onClick={handleLeave}
-          className="rounded-sm border border-black px-10 py-3 font-mono text-sm uppercase tracking-widest text-black transition-colors hover:bg-black hover:text-white"
-        >
-          Leave queue
-        </button>
-
-        <p className="text-xs text-zinc-400">
-          Waiting room etiquette: no shadowboxing in the ring. Your opponent
-          is on their way.
-        </p>
       </main>
 
       <ServerStatusCard online={matchmakerUp} />
@@ -190,7 +215,7 @@ export default function QueuePage() {
   return (
     <Suspense
       fallback={
-        <div className="flex flex-1 items-center justify-center font-mono text-sm uppercase tracking-widest text-zinc-500">
+        <div className="flex flex-1 items-center justify-center font-mono text-sm font-medium uppercase tracking-widest text-zinc-700">
           querying…
         </div>
       }

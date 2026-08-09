@@ -13,6 +13,13 @@ import type {
   PlayerStateWire,
 } from "@/vision/matchWire";
 import { LAST_MATCH_KEY, type FighterSummary, type MatchSummary } from "@/lib/match-summary";
+import {
+  fighterStats,
+  newMatchStats,
+  recordMatchState,
+  strongestPunch,
+  type MatchStats,
+} from "@/lib/match-stats";
 
 /** How often to broadcast local landmarks to the opponent over the game socket. */
 const POSE_SEND_INTERVAL_MS = 100;
@@ -25,25 +32,18 @@ function wsUrl(path: string) {
   return url.toString();
 }
 
-function emptyPunches(): FighterSummary["punches"] {
-  return {
-    JAB: { thrown: 0, landed: 0 },
-    CROSS: { thrown: 0, landed: 0 },
-    HOOK: { thrown: 0, landed: 0 },
-    UPPERCUT: { thrown: 0, landed: 0 },
-  };
-}
-
 /**
- * The server only tracks health/damageDealt/guardBreaks today; everything
- * else the summary page wants (peak speed, winded count, guard exposure,
- * per-punch-type counts, elo, win/loss record) has no source yet, so it's
- * zeroed/placeholdered here rather than fabricated.
+ * Health, damage and guard breaks come straight off the final snapshot;
+ * punch counts, winded count and guard exposure are accumulated from the
+ * `match-state` stream (see lib/match-stats.ts). Peak speed, elo and the
+ * win/loss record still have no source anywhere, so they stay zeroed rather
+ * than fabricated.
  */
 function toFighterSummary(
   player: PlayerStateWire | undefined,
   corner: FighterSummary["corner"],
   name: string,
+  stats: MatchStats,
 ): FighterSummary {
   return {
     name,
@@ -51,13 +51,11 @@ function toFighterSummary(
     healthAfter: player?.health ?? 0,
     damageDealt: player?.damageDealt ?? 0,
     guardBreaks: player?.guardBreaks ?? 0,
-    timesWinded: 0,
     peakSpeed: 0,
-    guardExposurePct: 0,
-    punches: emptyPunches(),
     eloBefore: 1000,
     eloAfter: 1000,
     record: { wins: 0, losses: 0 },
+    ...fighterStats(stats, player?.playerUuid ?? null),
   };
 }
 
@@ -65,6 +63,7 @@ function buildMatchSummary(
   ended: MatchEndMessage,
   uuid: string,
   opponentUuid: string,
+  stats: MatchStats,
 ): MatchSummary {
   const you = ended.players.find((p) => p.playerUuid === uuid);
   const opponent = ended.players.find((p) => p.playerUuid === opponentUuid);
@@ -75,11 +74,9 @@ function buildMatchSummary(
     durationMs: ended.durationMs,
     method: ended.reason,
     winner,
-    // No per-punch event log is tracked client-side yet, so there is no
-    // real "strongest punch" to report — zeroed placeholder.
-    strongestPunch: { type: "JAB", damage: 0, atMs: 0, speed: 0, by: "you" },
-    you: toFighterSummary(you, "blue", "You"),
-    opponent: toFighterSummary(opponent, "red", "Opponent"),
+    strongestPunch: strongestPunch(stats, uuid),
+    you: toFighterSummary(you, "blue", "You", stats),
+    opponent: toFighterSummary(opponent, "red", "Opponent", stats),
     narrative: `Match ended by ${ended.reason.toLowerCase()}.`,
   };
 }
@@ -105,6 +102,12 @@ export default function Fight() {
   const localLandmarksRef = useRef<RawLandmark[] | null>(null);
   const remoteLandmarksRef = useRef<RawLandmark[] | null>(null);
   const lastPoseSentAtRef = useRef(0);
+
+  // Summary tallies accumulate for the lifetime of this mount, which is
+  // exactly the lifetime of the fight — leaving for /summary unmounts. Not
+  // reset when the socket effect re-runs, so a StrictMode double-mount or a
+  // reconnect inside the server's grace window keeps the fight's history.
+  const statsRef = useRef<MatchStats>(newMatchStats());
 
   usePoseEngine({
     videoRef: localVideoRef,
@@ -293,12 +296,14 @@ export default function Fight() {
         return;
       }
       if (typeof data === "object" && data !== null && type === "match-state") {
-        setMatchState(data as MatchStateMessage);
+        const state = data as MatchStateMessage;
+        recordMatchState(statsRef.current, state);
+        setMatchState(state);
         return;
       }
       if (typeof data === "object" && data !== null && type === "match-end") {
         const ended = data as MatchEndMessage;
-        const summary = buildMatchSummary(ended, uuid, opponentUuid);
+        const summary = buildMatchSummary(ended, uuid, opponentUuid, statsRef.current);
         sessionStorage.setItem(LAST_MATCH_KEY, JSON.stringify(summary));
         router.push("/summary");
         return;

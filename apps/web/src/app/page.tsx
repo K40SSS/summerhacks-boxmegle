@@ -66,26 +66,37 @@ export default function Home() {
         >
           boxmegle
         </h1>
-        <form
-          onSubmit={handleSubmit}
-          className="flex w-full flex-col gap-3 sm:flex-row"
-        >
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Enter your name"
-            className="h-12 flex-1 rounded-full border border-zinc-300 bg-white/90 px-5 text-base text-black placeholder-zinc-400 shadow-sm outline-none backdrop-blur focus:border-black"
-          />
-          <button
-            type="submit"
-            disabled={joining}
-            className="flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-base font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+        {/* The error shares this column so its line is reserved whether or not
+            there is a message — otherwise appearing mid-layout shoves the
+            title and the form up the page. */}
+        <div className="flex w-full flex-col gap-3">
+          <form
+            onSubmit={handleSubmit}
+            className="flex w-full flex-col gap-3 sm:flex-row"
           >
-            {joining ? "Joining…" : "Enter!"}
-          </button>
-        </form>
-        {joinError && <p className="text-xs text-red-600">{joinError}</p>}
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter your name"
+              className="h-12 flex-1 rounded-full border border-zinc-300 bg-white/90 px-5 text-base text-black placeholder-zinc-400 shadow-sm outline-none backdrop-blur focus:border-black"
+            />
+            <button
+              type="submit"
+              disabled={joining}
+              className="flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-base font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {joining ? "Joining…" : "Enter!"}
+            </button>
+          </form>
+          <p
+            role="alert"
+            aria-live="polite"
+            className="min-h-6 text-base font-semibold text-red-600"
+          >
+            {joinError}
+          </p>
+        </div>
       </main>
       <ServerStatusCard online={matchmakerUp} />
     </div>
