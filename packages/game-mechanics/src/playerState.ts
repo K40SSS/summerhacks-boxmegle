@@ -17,6 +17,16 @@ export type Slot = 0 | 1;
 export interface PlayerState extends DefenderSnapshot {
   userUuid: string;
   slot: Slot;
+  /**
+   * Punch budget. At zero this fighter cannot throw (see canThrow) — stamina
+   * gates output, it never scales damage.
+   */
+  stamina: number;
+  /**
+   * Server clock time at which stamina regeneration may resume. Set to
+   * `now + staminaRecoveryDelayMs(after)` on every spend.
+   */
+  staminaRegenAt: number;
   /** Nominal damage dealt BY this player — decideWinner's first tiebreaker. */
   damageDealt: number;
   /** Guard breaks credited TO this player — decideWinner's second tiebreaker. */
@@ -29,11 +39,10 @@ export function initialPlayerState(userUuid: string, slot: Slot): PlayerState {
     slot,
     health: GAME_RULES.maxHealth,
     block: GAME_RULES.maxBlock,
+    stamina: GAME_RULES.maxStamina,
+    staminaRegenAt: 0,
     blocking: false,
     stunned: false,
-    dodging: false,
-    dodgeOffsetX: 0,
-    dodgeOffsetY: 0,
     damageDealt: 0,
     guardBreaks: 0,
   };

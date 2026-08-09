@@ -1,23 +1,27 @@
 /**
  * game-mechanics — camera shadowboxing fight logic.
  *
- * Pipeline (client side, per camera frame):
+ * Detection pipeline (per pose frame, wherever the stream is consumed):
  *   raw pose landmarks
  *     → normalizeLandmarks()   body-relative anatomical frame
  *     → smoothPose()           EMA jitter filter
  *     → extractFeatures()      velocities, angles, reach, depth
- *     → PunchDetector / BlockDetector / DodgeDetector
+ *     → PunchDetector / BlockDetector
  *     → DetectedAction events  (semantic — never damage numbers)
  *
  * Resolution (server side, authoritative):
- *   resolvePunch() / spendStamina() / drainBlock() / regenerateBlock() /
- *   regenerateStamina() / decideWinner() plus the shared GAME_RULES /
- *   PUNCH_STATS constants.
+ *   hitboxTest() decides whether a punch connected, from the defender's own
+ *   pose — there is no dodge action, because evasion is geometry rather than
+ *   a claim. Then resolvePunch() / spendStamina() / drainBlock() /
+ *   regenerateBlock() / regenerateStamina() / decideWinner() apply the rules,
+ *   over PlayerState, plus the shared GAME_RULES / PUNCH_STATS /
+ *   ZONE_MULTIPLIERS constants.
  */
 
 export * from "./types";
 export * from "./geometry";
 export * from "./rules";
+export * from "./playerState";
 export { normalizeLandmarks, type NormalizeResult } from "./normalize";
 export {
   SMOOTHING_ALPHA,
@@ -37,10 +41,11 @@ export {
   type BlockDetectorOptions,
 } from "./block-detector";
 export {
-  DEFAULT_DODGE_OPTIONS,
-  DodgeDetector,
-  type DodgeDetectorOptions,
-} from "./dodge-detector";
+  DEFAULT_HITBOX_OPTIONS,
+  hitboxTest,
+  type HitZone,
+  type HitboxOptions,
+} from "./hitbox";
 export {
   decideWinner,
   drainBlock,

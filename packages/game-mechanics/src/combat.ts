@@ -7,7 +7,9 @@
  * and NEVER damage numbers.
  */
 
-import { GAME_RULES, PUNCH_STATS, clamp, punchMisses, tiredDamage } from "./rules";
+import { GAME_RULES, PUNCH_STATS, ZONE_MULTIPLIERS, clamp } from "./rules";
+import { canThrow } from "./stamina";
+import type { HitZone } from "./hitbox";
 import type { PunchType } from "./types";
 
 /** The defender's state at the instant a punch arrives. */
@@ -16,20 +18,24 @@ export interface DefenderSnapshot {
   block: number;
   blocking: boolean;
   stunned: boolean;
-  dodging: boolean;
-  /** Whole-body offset from neutral, body frame, shoulder widths. */
-  dodgeOffsetX: number;
-  dodgeOffsetY: number;
 }
 
-export type PunchResult = "HIT" | "BLOCKED" | "GUARD_BREAK" | "MISS";
+/**
+ * NO_STAMINA is a first-class result rather than the server silently
+ * dropping the punch: the player really threw it, so the client must be able
+ * to show them why nothing happened.
+ */
+export type PunchResult = "HIT" | "BLOCKED" | "GUARD_BREAK" | "MISS" | "NO_STAMINA";
 
 export interface PunchOutcome {
   result: PunchResult;
+  /** Where the punch connected, or null on a MISS. */
+  zone: HitZone | null;
   /**
-   * NOMINAL damage of the punch (0 unless HIT). The reference server counts
-   * this full value toward damageDealt/damageReceived even when health
-   * clamps at 0 — do not recompute it as `health - defenderHealthAfter`.
+   * NOMINAL damage of the punch (0 unless HIT), already scaled by the zone
+   * multiplier. The reference server counts this full value toward
+   * damageDealt/damageReceived even when health clamps at 0 — do not
+   * recompute it as `health - defenderHealthAfter`.
    */
   healthDamage: number;
   /** Damage applied to the block meter (0 unless BLOCKED/GUARD_BREAK). */
@@ -38,10 +44,9 @@ export interface PunchOutcome {
   defenderBlockAfter: number;
   /**
    * True when the guard broke. The server must then: put the defender in
-   * STUNNED for GAME_RULES.stunDurationMs, CLEAR their blocking AND dodging
-   * flags (a fresh block-start/dodge-start is required afterwards), credit
-   * the attacker one guardBreak (decision tiebreaker), and restart the
-   * guard-regeneration delay clock.
+   * STUNNED for GAME_RULES.stunDurationMs, CLEAR their blocking flag (a fresh
+   * block-start is required afterwards), credit the attacker one guardBreak
+   * (decision tiebreaker), and restart the guard-regeneration delay clock.
    */
   stunsDefender: boolean;
 }
@@ -49,41 +54,55 @@ export interface PunchOutcome {
 /**
  * Resolve one punch against the defender's current state.
  *
- * Inputs must already be server-sanitized: clamp client-supplied impact and
- * dodge offsets to [-2.5, 2.5] (never trust client aim) and default a
- * missing aim to { x: 0, y: -0.7 } before calling.
+ * `zone` comes from `hitboxTest(impact, defenderPose)` — geometry the caller
+ * computes from the defender's OWN streamed pose, never a flag the defender
+ * asserts about themselves. A null zone means the punch found only air.
+ *
+ * The caller should still clamp client-supplied impact coordinates (a
+ * plausible reach is roughly [-2.5, 2.5] shoulder widths) and default a
+ * missing aim to { x: 0, y: -0.7 } before hit-testing.
  *
  * Order of rules:
- * 1. An evading (non-blocking, non-stunned) defender whose body moved away
- *    from the punch's impact point takes nothing — MISS.
- * 2. A blocking defender absorbs the punch on the guard meter; reaching zero
+ * 1. An empty attacker cannot throw at all — NO_STAMINA, nothing changes.
+ *    Stamina is a hard gate: above zero every punch lands at full power, and
+ *    at zero none do. It never scales damage.
+ * 2. A punch that landed on no hitbox takes nothing — MISS. Evasion is
+ *    geometric, so it applies regardless of blocking or stun: you cannot hit
+ *    someone who is not there.
+ * 3. A blocking defender absorbs the punch on the guard meter; reaching zero
  *    breaks the guard and stuns (the breaking punch deals no health damage —
  *    the break itself is the opening).
- * 3. Otherwise the punch lands for its health damage.
+ * 4. Otherwise the punch lands for its health damage.
  *
- * `attacker.tired` (from spendStamina — the punch could not be fully
- * afforded) drops both health and guard damage to `tiredDamage`: gassed
- * punches always land, but as taps.
+ * Pass `attacker` to enforce the stamina gate. Omitting it resolves the punch
+ * ungated, which is what the client's local prediction wants when it is only
+ * asking "would this have landed?".
  */
 export function resolvePunch(
   punchType: PunchType,
-  impact: { x: number; y: number },
+  zone: HitZone | null,
   defender: DefenderSnapshot,
-  attacker?: { tired?: boolean },
+  attacker?: { stamina: number },
 ): PunchOutcome {
   const stats = PUNCH_STATS[punchType];
-  const tired = attacker?.tired === true;
-  const healthDamage = tired ? tiredDamage(stats.healthDamage) : stats.healthDamage;
-  const guardDamage = tired ? tiredDamage(stats.guardDamage) : stats.guardDamage;
+  const guardDamage = stats.guardDamage;
 
-  if (
-    defender.dodging &&
-    !defender.blocking &&
-    !defender.stunned &&
-    punchMisses(impact, { x: defender.dodgeOffsetX, y: defender.dodgeOffsetY })
-  ) {
+  if (attacker && !canThrow(attacker.stamina)) {
+    return {
+      result: "NO_STAMINA",
+      zone: null,
+      healthDamage: 0,
+      guardDamage: 0,
+      defenderHealthAfter: defender.health,
+      defenderBlockAfter: defender.block,
+      stunsDefender: false,
+    };
+  }
+
+  if (zone === null) {
     return {
       result: "MISS",
+      zone: null,
       healthDamage: 0,
       guardDamage: 0,
       defenderHealthAfter: defender.health,
@@ -97,6 +116,7 @@ export function resolvePunch(
     const broke = blockAfter <= 0;
     return {
       result: broke ? "GUARD_BREAK" : "BLOCKED",
+      zone,
       healthDamage: 0,
       guardDamage,
       defenderHealthAfter: defender.health,
@@ -105,9 +125,11 @@ export function resolvePunch(
     };
   }
 
+  const healthDamage = stats.healthDamage * ZONE_MULTIPLIERS[zone];
   const healthAfter = clamp(defender.health - healthDamage, 0, GAME_RULES.maxHealth);
   return {
     result: "HIT",
+    zone,
     healthDamage,
     guardDamage: 0,
     defenderHealthAfter: healthAfter,
@@ -121,9 +143,9 @@ export interface DrainOutcome {
   /**
    * True when this tick's drain emptied the meter. Draining to zero IS a
    * guard break — apply exactly the stunsDefender consequences from
-   * PunchOutcome (stun, clear blocking/dodging, credit the OPPONENT a
-   * guardBreak, restart the regen delay). Holding block at 0 forever must
-   * not be possible.
+   * PunchOutcome (stun, clear blocking, credit the OPPONENT a guardBreak,
+   * restart the regen delay). Holding block at 0 forever must not be
+   * possible.
    */
   guardBroke: boolean;
 }

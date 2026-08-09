@@ -1,33 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { clamp, eloExpected, eloUpdate, punchMisses } from "./rules";
+import { clamp, eloExpected, eloUpdate } from "./rules";
 
-describe("punchMisses (dodge resolution)", () => {
-  it("hits a defender who has not moved", () => {
-    expect(punchMisses({ x: 0, y: -0.7 }, { x: 0, y: 0 })).toBe(false);
-  });
-
-  it("misses when the defender slipped away from the impact line", () => {
-    expect(punchMisses({ x: 0, y: -0.7 }, { x: 0.9, y: 0 })).toBe(true);
-    expect(punchMisses({ x: 0, y: -0.7 }, { x: -0.9, y: 0 })).toBe(true);
-  });
-
-  it("still hits when the defender slipped into the punch", () => {
-    // Punch aimed to the defender's right, defender slipped right too.
-    expect(punchMisses({ x: 0.6, y: -0.7 }, { x: 0.5, y: 0 })).toBe(false);
-  });
-
-  it("misses a head-height punch when the defender ducked", () => {
-    expect(punchMisses({ x: 0, y: -0.8 }, { x: 0, y: 0.5 })).toBe(true);
-  });
-
-  it("does not let a duck evade a body-height punch", () => {
-    expect(punchMisses({ x: 0, y: -0.2 }, { x: 0, y: 0.5 })).toBe(false);
-  });
-
-  it("small shuffles are not dodges", () => {
-    expect(punchMisses({ x: 0, y: -0.7 }, { x: 0.3, y: 0.1 })).toBe(false);
-  });
-});
+// Evasion used to live here as punchMisses(). It is now geometry rather than
+// a rule over a claimed offset — see hitbox.test.ts.
 
 describe("clamp", () => {
   it("bounds values", () => {
