@@ -6,6 +6,13 @@ import { queueRouter, startMatchmakerWorker } from "./routes/queue";
 import { createPeerServer } from "./peer";
 import { gameSocketServer } from "./ws/gameSession";
 
+process.on("uncaughtException", (err) => {
+  console.error("uncaughtException", err);
+});
+process.on("unhandledRejection", (err) => {
+  console.error("unhandledRejection", err);
+});
+
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
 const httpServer = http.createServer(app);
