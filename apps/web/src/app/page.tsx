@@ -22,18 +22,16 @@ const NAME_PLACEHOLDERS = [
   "Definitely not a bot",
 ];
 
+const INITIAL_PLACEHOLDER =
+  NAME_PLACEHOLDERS[Math.floor(Math.random() * NAME_PLACEHOLDERS.length)];
+
 export default function Home() {
   const router = useRouter();
   const [matchmakerUp, setMatchmakerUp] = useState<boolean | null>(null);
   const [name, setName] = useState("");
-  const [placeholder, setPlaceholder] = useState(NAME_PLACEHOLDERS[0]);
-  const [entering, setEntering] = useState(false);
-
-  useEffect(() => {
-    setPlaceholder(
-      NAME_PLACEHOLDERS[Math.floor(Math.random() * NAME_PLACEHOLDERS.length)],
-    );
-  }, []);
+  const [placeholder] = useState(INITIAL_PLACEHOLDER);
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`${MATCHMAKER_URL}/health`)
@@ -43,34 +41,30 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || entering) return;
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setJoinError("Enter a name first.");
+      return;
+    }
 
-    setEntering(true);
+    setJoining(true);
+    setJoinError(null);
     try {
-      // TODO: replace with real matchmaking (/queue); stubbing a second
-      // player here just to exercise /begin_fight end-to-end.
-      const player1 = { uuid: crypto.randomUUID(), name: name.trim() };
-      const player2 = { uuid: crypto.randomUUID(), name: "Test Opponent" };
-
-      const res = await fetch(`${MATCHMAKER_URL}/begin_fight`, {
+      const res = await fetch(`${MATCHMAKER_URL}/queue`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ player1, player2 }),
+        body: JSON.stringify({ name: trimmedName }),
       });
-
-      if (!res.ok) throw new Error(`begin_fight failed: ${res.status}`);
-      const session = await res.json();
-
-      const params = new URLSearchParams({
-        session: session.sessionId,
-        uuid: player1.uuid,
-        opponent: player2.uuid,
-        host: String(session.hostUuid === player1.uuid),
-      });
-      router.push(`/fight?${params.toString()}`);
-    } catch (err) {
-      console.error(err);
-      setEntering(false);
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.userUuid) {
+        setJoinError(data?.error ?? "Couldn't join the queue.");
+        return;
+      }
+      router.push(`/queue?u=${encodeURIComponent(data.userUuid)}`);
+    } catch {
+      setJoinError("Matchmaker unreachable. Is the server running?");
+    } finally {
+      setJoining(false);
     }
   };
 
@@ -101,12 +95,13 @@ export default function Home() {
           />
           <button
             type="submit"
-            disabled={entering}
-            className="flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-base font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:opacity-50"
+            disabled={joining}
+            className="flex h-12 items-center justify-center gap-2 rounded-full bg-black px-6 text-base font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {entering ? "Entering..." : "Enter!"}
+            {joining ? "Joining…" : "Enter!"}
           </button>
         </form>
+        {joinError && <p className="text-xs text-red-600">{joinError}</p>}
         <p className="text-xs text-zinc-400">
           Mouthguard sold separately. We are not liable for lost teeth or
           lost pride.

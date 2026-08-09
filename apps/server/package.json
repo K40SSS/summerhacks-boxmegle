@@ -15,6 +15,7 @@
     "db": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "express": "^5.1.0",
+    "game-mechanics": "workspace:*",
     "peer": "^1.0.2",
     "ws": "^8.18.0"
   },
