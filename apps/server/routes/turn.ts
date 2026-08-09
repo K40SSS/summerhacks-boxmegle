@@ -13,7 +13,7 @@ turnRouter.get("/turn-credentials", async (_req, res) => {
 
   try {
     const cfRes = await fetch(
-      `https://rtc.live.cloudflare.com/v1/turn/keys/${turnKeyId}/credentials/generate`,
+      `https://rtc.live.cloudflare.com/v1/turn/keys/${turnKeyId}/credentials/generate-ice-servers`,
       {
         method: "POST",
         headers: {
@@ -31,22 +31,16 @@ turnRouter.get("/turn-credentials", async (_req, res) => {
     }
 
     const data = (await cfRes.json()) as {
-      iceServers: { urls: string[]; username: string; credential: string };
+      iceServers: { urls: string[]; username?: string; credential?: string }[];
     };
 
-    // Port 53 is blocked by browsers; the STUN-only entry is added separately.
-    const urls = data.iceServers.urls.filter((url) => !url.includes(":53"));
+    // Port 53 is blocked by browsers.
+    const iceServers = data.iceServers.map((server) => ({
+      ...server,
+      urls: server.urls.filter((url) => !url.includes(":53")),
+    }));
 
-    res.json({
-      iceServers: [
-        { urls: "stun:stun.cloudflare.com:3478" },
-        {
-          urls,
-          username: data.iceServers.username,
-          credential: data.iceServers.credential,
-        },
-      ],
-    });
+    res.json({ iceServers });
   } catch (err) {
     console.error("GET /turn-credentials failed:", err);
     res.status(502).json({ error: "failed to generate TURN credentials" });
