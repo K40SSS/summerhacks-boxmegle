@@ -13,7 +13,7 @@
  */
 
 import type { BodyPoint, NormalizedPose, RawLandmark } from "./types";
-import { LM } from "./types";
+import { LM, UPPER_BODY_INDICES } from "./types";
 
 export interface NormalizeResult {
   pose: NormalizedPose;
@@ -42,9 +42,15 @@ export function normalizeLandmarks(
   landmarks: RawLandmark[],
   timestamp: number,
 ): NormalizeResult | null {
+  // Every joint the body frame is built from must be present: `pick` indexes
+  // the array directly, so a gap here would throw rather than degrade. The
+  // stream arrives from an untrusted client, so check before touching it.
+  for (const index of UPPER_BODY_INDICES) {
+    if (!landmarks[index]) return null;
+  }
+
   const ls = landmarks[LM.LEFT_SHOULDER];
   const rs = landmarks[LM.RIGHT_SHOULDER];
-  if (!ls || !rs) return null;
 
   const scale = Math.hypot(ls.x - rs.x, ls.y - rs.y);
   if (scale < 1e-4) return null;
@@ -62,8 +68,17 @@ export function normalizeLandmarks(
 
   const pick = (i: number) => toBody(landmarks[i], origin, scale, cos, sin);
 
+  // Mean visibility across the UPPER-BODY set only — not the whole array.
+  // MediaPipe returns 33 landmarks and scores the ones it cannot see (legs,
+  // routinely out of frame at webcam range) near zero. Averaging those in
+  // drags a perfectly tracked guard below GAME_RULES.minPunchConfidence and
+  // silently disables every detector, since both gate on this value.
   const confidence =
-    landmarks.reduce((sum, lm) => sum + (lm.visibility ?? 0), 0) / landmarks.length;
+    UPPER_BODY_INDICES.reduce<number>(
+      (sum, index) => sum + (landmarks[index].visibility ?? 0),
+      0,
+    ) /
+    UPPER_BODY_INDICES.length;
 
   return {
     pose: {
