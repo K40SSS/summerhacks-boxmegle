@@ -219,7 +219,11 @@ function FightPage() {
       const matchmakerUrl = new URL(MATCHMAKER_URL);
       peer = new Peer(peerId, {
         host: matchmakerUrl.hostname,
-        port: matchmakerUrl.port ? Number(matchmakerUrl.port) : undefined,
+        port: matchmakerUrl.port
+          ? Number(matchmakerUrl.port)
+          : matchmakerUrl.protocol === "https:"
+            ? 443
+            : 80,
         path: "/peerjs",
         secure: matchmakerUrl.protocol === "https:",
       });
