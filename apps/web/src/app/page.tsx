@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Press_Start_2P } from "next/font/google";
 import { ServerStatusCard } from "@/components/ui/ServerStatusCard";
 import { LandingBackground } from "@/components/landing/LandingBackground";
@@ -21,16 +22,14 @@ const NAME_PLACEHOLDERS = [
   "Definitely not a bot",
 ];
 
+const INITIAL_PLACEHOLDER =
+  NAME_PLACEHOLDERS[Math.floor(Math.random() * NAME_PLACEHOLDERS.length)];
+
 export default function Home() {
+  const router = useRouter();
   const [matchmakerUp, setMatchmakerUp] = useState<boolean | null>(null);
   const [name, setName] = useState("");
-  const [placeholder, setPlaceholder] = useState(NAME_PLACEHOLDERS[0]);
-
-  useEffect(() => {
-    setPlaceholder(
-      NAME_PLACEHOLDERS[Math.floor(Math.random() * NAME_PLACEHOLDERS.length)],
-    );
-  }, []);
+  const [placeholder] = useState(INITIAL_PLACEHOLDER);
 
   useEffect(() => {
     fetch(`${MATCHMAKER_URL}/health`)
@@ -40,7 +39,8 @@ export default function Home() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: hand off to matchmaking flow
+    // TEMP: queue preview only; replace with real matchmaking handoff later
+    router.push("/queue");
   };
 
   return (
